@@ -28,9 +28,22 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http
 CATEGORIES = ["drug_substance", "solid_form", "process", "formulation", "device", "use", "combination"]
 
 
+def relevant_level(category: str | None) -> str:
+    """Blocking level for a link an analyst confirmed as related (same rule as etl.match.classify_rules)."""
+    return "blocking" if category == "drug_substance" else "avoidable"
+
+
 @app.on_event("startup")
 def _startup():
     init_db()
+    # A confirmed link is related by definition; heal links confirmed before that was enforced.
+    with session() as s:
+        for l in s.exec(select(PatentLink).where(PatentLink.review_state == "confirmed",
+                                                 or_(PatentLink.blocking_level.is_(None),
+                                                     PatentLink.blocking_level == "not_relevant"))):
+            l.blocking_level = relevant_level(l.claim_category)
+            s.add(l)
+        s.commit()
 
 
 def _d(x):
@@ -355,8 +368,10 @@ def update_link(link_id: int, body: dict = Body(...)):
         for k in ("review_state", "claim_category", "blocking_level", "design_around_note", "drug_product_id"):
             if k in body:
                 setattr(l, k, body[k])
+        if l.review_state == "confirmed" and l.blocking_level in (None, "not_relevant"):
+            l.blocking_level = relevant_level(l.claim_category)
         if "review_state" in body:
-            l.reviewed_at = datetime.now(timezone.utc)
+            l.reviewed_at = None if body["review_state"] == "candidate" else datetime.now(timezone.utc)
         if any(k in body for k in ("claim_category", "blocking_level", "design_around_note")):
             l.match_method = "manual"
         s.add(l)
