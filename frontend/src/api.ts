@@ -63,13 +63,6 @@ export interface DrugDetail {
 
 export interface ReviewStatus { total: number; pending: number; confirmed: boolean }
 
-export interface MatrixCell { worst: string | null; latest_expiry: string | null; n: number; n_active: number }
-export interface Matrix {
-  as_of: string; mode: string; categories: string[]; category_th: Record<string, string>;
-  rows: { product_id: number; product: string; cells: Record<string, MatrixCell>; verdict: string;
-    verdict_th: string; free_date: string | null; fully_clear_date: string | null }[];
-}
-
 export interface GraphData {
   nodes: { id: string; type: "product" | "substance" | "patent"; label: string; title?: string; status?: string;
     application_no?: string; expiry_date?: string }[];
@@ -98,7 +91,6 @@ export const api = {
   drug: (id: number | string, asOf: string) => get<DrugDetail>(`/api/drugs/${id}?${qs({ as_of: asOf })}`),
   override: (id: number, body: unknown) => send(`/api/drugs/${id}/override`, "POST", body),
   updateDrug: (id: number, body: unknown) => send(`/api/drugs/${id}`, "PATCH", body),
-  matrix: (asOf: string) => get<Matrix>(`/api/matching/matrix?${qs({ as_of: asOf })}`),
   graph: (asOf: string) => get<GraphData>(`/api/matching/graph?${qs({ as_of: asOf })}`),
   links: (p: Record<string, unknown>) => get<{ total: number; rows: Link[] }>(`/api/links?${qs(p)}`),
   updateLink: (id: number, body: unknown) => send<Link>(`/api/links/${id}`, "PATCH", body),

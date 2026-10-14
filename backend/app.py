@@ -25,7 +25,6 @@ from etl.thai import to_be_str
 app = FastAPI(title="Thai Drug–Patent Landscape")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_methods=["*"], allow_headers=["*"])
-CATEGORIES = ["drug_substance", "solid_form", "process", "formulation", "device", "use", "combination"]
 
 
 def relevant_level(category: str | None) -> str:
@@ -281,36 +280,6 @@ def override(product_id: int, body: dict = Body(...)):
 
 
 # ------------------------------------------------------------------ matching
-@app.get("/api/matching/matrix")
-def matrix(as_of: Optional[date] = None, mode: str = "auto"):
-    as_of = as_of or date.today()
-    rank = {"granted_active": 5, "pending_examining": 4, "pending_unexamined": 4, "likely_abandoned": 3,
-            "expired": 2, "abandoned": 1, "revoked": 1, "not_published": 0}
-    with session() as s:
-        rows = []
-        for dp in s.exec(select(DrugProduct).order_by(DrugProduct.id)):
-            cells = {}
-            for v in load_views(s, dp, as_of, mode):
-                if v.link.blocking_level == "not_relevant":
-                    continue
-                cat = v.link.claim_category or "formulation"
-                c = cells.setdefault(cat, {"worst": None, "latest_expiry": None, "n": 0, "n_active": 0})
-                c["n"] += 1
-                if v.status in ("granted_active", "pending_examining", "pending_unexamined"):
-                    c["n_active"] += 1
-                if c["worst"] is None or rank.get(v.status, 0) > rank.get(c["worst"], 0):
-                    c["worst"] = v.status
-                exp = v.patent.expiry_date
-                if exp and v.status in ("granted_active", "pending_examining", "pending_unexamined"):
-                    c["latest_expiry"] = max(c["latest_expiry"] or exp.isoformat(), exp.isoformat())
-            a = assess(dp, load_views(s, dp, as_of, mode), as_of, require_review=True)
-            rows.append({"product_id": dp.id, "product": dp.name, "cells": cells, "verdict": a["verdict"],
-                         "verdict_th": VERDICT_TH[a["verdict"]], "free_date": _d(a["free_date"]),
-                         "fully_clear_date": _d(a["fully_clear_date"])})
-        return {"as_of": as_of.isoformat(), "mode": mode, "categories": CATEGORIES,
-                "category_th": {k: CATEGORY_TH[k] for k in CATEGORIES}, "status_th": STATUS_TH, "rows": rows}
-
-
 @app.get("/api/matching/graph")
 def graph(as_of: Optional[date] = None, mode: str = "auto"):
     as_of = as_of or date.today()

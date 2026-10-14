@@ -131,9 +131,10 @@ td.clip { max-width: 380px; }
 .viz-legend .item { display: inline-flex; gap: 6px; align-items: center; }
 .tooltip { position: fixed; pointer-events: none; z-index: 50; background: var(--surface-1); border: 1px solid var(--border);
   box-shadow: var(--shadow); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; max-width: 360px; }
-.matrix td.cell { min-width: 120px; font-size: 12px; }
-.matrix td.cell .n { color: var(--text-muted); }
 .graph-box { height: 560px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-1); }
+.graph-popup { position: absolute; z-index: 40; background: var(--surface-1); border: 1px solid var(--border); box-shadow: var(--shadow);
+  border-radius: 8px; padding: 10px 12px; font-size: 13px; width: 320px; max-width: calc(100% - 16px); }
+.graph-popup .close { position: absolute; top: 4px; right: 4px; padding: 0 8px; border: none; background: none; font-size: 18px; }
 .empty { padding: 24px; text-align: center; color: var(--text-muted); }
 .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; }
 .evidence { font-size: 12.5px; background: var(--surface-2); border-radius: 6px; padding: 6px 8px; }
