@@ -148,6 +148,12 @@ td.clip { max-width: 380px; }
 .viz-legend .item { display: inline-flex; gap: 6px; align-items: center; }
 .tooltip { position: fixed; pointer-events: none; z-index: 50; background: var(--surface-1); border: 1px solid var(--border);
   box-shadow: var(--shadow); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; max-width: 360px; }
+.help { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+  margin-left: 4px; border-radius: 50%; border: 1px solid var(--border); font-size: 11px; font-weight: 600;
+  color: var(--text-muted); cursor: help; vertical-align: middle; }
+.help .tip { position: fixed; z-index: 50; pointer-events: none;
+  background: var(--surface-1); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; font-weight: 400; color: var(--text-secondary); white-space: normal; text-align: left; }
 .graph-box { height: 560px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-1); }
 .graph-popup { position: absolute; z-index: 40; background: var(--surface-1); border: 1px solid var(--border); box-shadow: var(--shadow);
   border-radius: 8px; padding: 10px 12px; font-size: 13px; width: 320px; max-width: calc(100% - 16px); }

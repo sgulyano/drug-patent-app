@@ -414,7 +414,16 @@ def eval_latest():
     path = ROOT / "eval" / "report.json"
     if not path.exists():
         return {"available": False}
-    return {"available": True, **json.loads(path.read_text(encoding="utf-8"))}
+    report = json.loads(path.read_text(encoding="utf-8"))
+    # the report may come from a fresh eval DB, so resolve links against this app's DB for the UI
+    names = {p["product"] for p in report["products"]}
+    appnos = {a for p in report["products"] for a in p.get("discovery", {}).get("missed", [])}
+    appnos |= {a["appno"] for a in report["adjudicate"]}
+    appnos |= {d["appno"] for p in report["products"] for d in p.get("matched", [])}
+    with session() as s:
+        drug_ids = {d.name: d.id for d in s.exec(select(DrugProduct).where(DrugProduct.name.in_(names)))}
+        known = list(s.exec(select(Patent.application_no).where(Patent.application_no.in_(appnos))))
+    return {"available": True, **report, "drug_ids": drug_ids, "known_patents": known}
 
 
 # ------------------------------------------------------------------ frontend (production build)

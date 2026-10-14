@@ -5,8 +5,8 @@
     python -m eval.score --fresh --skip-crawl
 
 Only automated links are scored (match_method keyword/llm); analyst review decisions are ignored, so the score
-measures the pipeline, not the analyst. Disagreements on items the key marks `suspect` go to adjudication
-instead of counting as failures.
+measures the pipeline, not the analyst. The PDF is ground truth: every disagreement counts as a pipeline error,
+including on items the key marks `suspect`; those are also listed under `adjudicate` with the note, for context.
 """
 import argparse
 import csv
@@ -182,7 +182,7 @@ def write_reports(report: dict):
     for p in report["products"]:
         if p.get("discovery", {}).get("missed"):
             md.append(f"- {p['product']}: {', '.join(p['discovery']['missed'])}")
-    md += ["", "## For human adjudication", ""]
+    md += ["", "## Notes on errors (extra patents, suspect key items, status drift)", ""]
     for a in report["adjudicate"]:
         md.append(f"- **{a['product']}** {a['appno']} [{', '.join(a['fields'])}] — {a['reason']}"
                   + (f" — {a.get('title')}" if a.get("title") else ""))
