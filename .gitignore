@@ -6,3 +6,4 @@ node_modules/
 frontend/dist/
 eval/report.*
 eval/runs/
+.playwright-mcp/

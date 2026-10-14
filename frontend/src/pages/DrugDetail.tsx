@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type DrugDetail as DD, type Link as PLink, type Substance } from "../api";
 import { Timeline } from "../components/Timeline";
-import { CategoryChip, ExportLink, Loading, ReviewBadge, StatusBadge, VerdictBadge, useAsOf, useData } from "../components/ui";
-import { CATEGORIES, CATEGORY_LABEL, VERDICT, beDate } from "../viz";
+import { CATEGORY_OPTIONS, CategoryChip, ExportLink, Loading, Picker, ReviewBadge, StatusBadge, VerdictBadge, useAsOf, useData } from "../components/ui";
+import { CATEGORIES, VERDICT, beDate } from "../viz";
 
 export default function DrugDetail() {
   const { id = "" } = useParams();
@@ -126,8 +126,8 @@ export function LinksTable({ links, onChanged }: { links: (PLink & { patent: any
           <td><Link className="mono" to={`/patents/${l.patent.application_no}`}>{l.patent.application_no}</Link>
             <div className="muted small mono">{l.patent.patent_no ? `#${l.patent.patent_no}` : ""}</div></td>
           <td className="clip small"><div className="clip-3">{l.patent.title}</div></td>
-          <td><select value={l.claim_category ?? ""} onChange={(e) => set(l, { claim_category: e.target.value || null })}>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}</select>
+          <td><Picker label="ประเภทข้อถือสิทธิ" value={l.claim_category ?? ""} options={CATEGORY_OPTIONS}
+            onChange={(v) => set(l, { claim_category: v })} />
             <div className="muted small">{l.blocking_level === "blocking" ? "ขวางการผลิต" : l.blocking_level === "not_relevant" ? "ไม่เกี่ยวข้อง" : "หลีกเลี่ยงได้"} · {l.match_method}</div></td>
           <td className="small"><StatusBadge status={l.patent.status_as_of} raw={l.patent.status_raw} /></td>
           <td className="small">{l.patent.expiry_date_be ?? "—"}</td>
