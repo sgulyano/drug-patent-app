@@ -65,6 +65,13 @@ export const STATUS_BADGE: Record<string, { color: string; icon: string; rank: n
   not_published: { color: "var(--st-neutral)", icon: "·", rank: 0 },
 };
 
+// Per-link blocking level, styled like the drug verdict it feeds into.
+export const BLOCKING: Record<string, { label: string; color: string; icon: string }> = {
+  blocking: { label: "ขวางการผลิต", color: "var(--st-critical)", icon: "✕" },
+  avoidable: { label: "หลีกเลี่ยงได้", color: "var(--st-warning)", icon: "!" },
+  not_relevant: { label: "ไม่เกี่ยวข้อง", color: "var(--st-good)", icon: "✓" },
+};
+
 export const VERDICT: Record<string, { label: string; color: string; icon: string }> = {
   free: { label: "ผลิตได้", color: "var(--st-good)", icon: "✓" },
   free_with_avoidance: { label: "ผลิตได้โดยหลีกเลี่ยง", color: "var(--st-warning)", icon: "!" },

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { ExportLink, Loading, ReviewBadge, VerdictBadge, useAsOf, useData } from "../components/ui";
+import { ExportLink, Loading, Picker, ReviewBadge, VerdictBadge, useAsOf, useData, verdictOption } from "../components/ui";
 import { VERDICT } from "../viz";
 
 export default function Drugs() {
@@ -24,11 +24,9 @@ export default function Drugs() {
       {!data ? <Loading error={error} /> : (
         <>
           <div className="row" style={{ marginBottom: 12 }}>
-            <select value={verdict} onChange={(e) => setVerdict(e.target.value)} aria-label="กรองตามสถานะ">
-              <option value="">ทุกสถานะ ({data.length})</option>
-              {Object.entries(VERDICT).filter(([k]) => counts[k]).map(([k, v]) =>
-                <option key={k} value={k}>{v.icon} {v.label} ({counts[k]})</option>)}
-            </select>
+            <Picker label="กรองตามสถานะ" value={verdict} onChange={setVerdict} options={[
+              { value: "", label: `ทุกสถานะ (${data.length})`, marker: <span className="ic" aria-hidden /> },
+              ...Object.keys(VERDICT).filter((k) => counts[k]).map((k) => verdictOption(k, ` (${counts[k]})`))]} />
             {verdict && <span className="muted small">แสดง {shown.length} จาก {data.length} รายการ</span>}
           </div>
           <div className="grid cards">
