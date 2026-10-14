@@ -1,6 +1,6 @@
 """Stage A (candidate links) + Stage B (claim classification) of the matching design.
 
-    python -m etl.match            # rules, plus Claude when credentials are configured
+    python -m etl.match            # rules, plus the Ollama Cloud LLM when credentials are configured
     python -m etl.match --no-llm
 """
 import argparse

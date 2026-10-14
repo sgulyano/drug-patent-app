@@ -3,7 +3,7 @@
 Sources, all automatic:
   * rule-generated spellings (etl.thai_translit), matched by phonetic skeleton against the corpus;
   * "<Thai> (<english>)" / "<english> (<Thai>)" pairs harvested from patent text;
-  * optional Claude suggestions (etl.llm), also validated against the corpus.
+  * optional LLM suggestions (etl.llm), also validated against the corpus.
 
     python -m etl.name_variants
 """

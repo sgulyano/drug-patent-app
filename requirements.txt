@@ -5,5 +5,4 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pyyaml>=6
 openpyxl>=3.1
-anthropic>=0.40
 pytest>=8
