@@ -4,7 +4,6 @@
     python -m etl.assess --as-of 2022-07-20
 """
 import argparse
-import json
 import logging
 from dataclasses import dataclass
 from datetime import date
@@ -12,39 +11,39 @@ from datetime import date
 from sqlmodel import select
 
 from backend.db import init_db, session
-from backend.models import Assessment, DrugProduct, Patent, PatentLink, ProductSubstance, Substance
-from etl.normalize import status_as_of
+from backend.models import (Assessment, AssessmentMode, BlockingLevel as B, ClaimCategory as C, DrugProduct, Patent,
+                            PatentLink, PatentStatus as S, ProductSubstance, ReviewState, Substance, Verdict as V)
+from etl.normalize import ACTIVE, status_as_of
 from etl.thai import to_be_str
 
 log = logging.getLogger(__name__)
 
-ACTIVE = {"granted_active", "pending_unexamined", "pending_examining"}
 CATEGORY_TH = {
-    "drug_substance": "ตัวยาสำคัญ (Drug substance)",
-    "solid_form": "รูปแบบของสาร/เกลือ/ผลึก (Solid form)",
-    "process": "กระบวนการผลิต (Process)",
-    "formulation": "สูตรตำรับ/องค์ประกอบ (Formulation)",
-    "device": "อุปกรณ์ให้ยา (Device)",
-    "use": "การใช้/ข้อบ่งใช้ (Use)",
-    "combination": "ยาผสม (Combination)",
+    C.DRUG_SUBSTANCE: "ตัวยาสำคัญ (Drug substance)",
+    C.SOLID_FORM: "รูปแบบของสาร/เกลือ/ผลึก (Solid form)",
+    C.PROCESS: "กระบวนการผลิต (Process)",
+    C.FORMULATION: "สูตรตำรับ/องค์ประกอบ (Formulation)",
+    C.DEVICE: "อุปกรณ์ให้ยา (Device)",
+    C.USE: "การใช้/ข้อบ่งใช้ (Use)",
+    C.COMBINATION: "ยาผสม (Combination)",
     None: "ไม่ระบุ",
 }
 STATUS_TH = {
-    "granted_active": "ได้รับสิทธิบัตร มีผลคุ้มครอง",
-    "pending_unexamined": "ประกาศโฆษณาแล้ว ยังไม่ยื่นตรวจสอบ",
-    "pending_examining": "อยู่ระหว่างตรวจสอบการประดิษฐ์",
-    "likely_abandoned": "น่าจะถูกละทิ้ง (ไม่ยื่นตรวจสอบภายใน 5 ปี)",
-    "expired": "สิ้นอายุ",
-    "abandoned": "ละทิ้ง/ยกคำขอ",
-    "revoked": "เพิกถอน",
-    "not_published": "ยังไม่ประกาศโฆษณา ณ วันที่ประเมิน",
+    S.GRANTED_ACTIVE: "ได้รับสิทธิบัตร มีผลคุ้มครอง",
+    S.PENDING_UNEXAMINED: "ประกาศโฆษณาแล้ว ยังไม่ยื่นตรวจสอบ",
+    S.PENDING_EXAMINING: "อยู่ระหว่างตรวจสอบการประดิษฐ์",
+    S.LIKELY_ABANDONED: "น่าจะถูกละทิ้ง (ไม่ยื่นตรวจสอบภายใน 5 ปี)",
+    S.EXPIRED: "สิ้นอายุ",
+    S.ABANDONED: "ละทิ้ง/ยกคำขอ",
+    S.REVOKED: "เพิกถอน",
+    S.NOT_PUBLISHED: "ยังไม่ประกาศโฆษณา ณ วันที่ประเมิน",
 }
 VERDICT_TH = {
-    "free": "ผลิตได้",
-    "free_with_avoidance": "ผลิตได้โดยหลีกเลี่ยง",
-    "blocked_until": "ยังผลิตเพื่อจำหน่ายไม่ได้",
-    "pending_review": "รอตรวจทานสิทธิบัตร",
-    "unknown": "ไม่ทราบ",
+    V.FREE: "ผลิตได้",
+    V.FREE_WITH_AVOIDANCE: "ผลิตได้โดยหลีกเลี่ยง",
+    V.BLOCKED_UNTIL: "ยังผลิตเพื่อจำหน่ายไม่ได้",
+    V.PENDING_REVIEW: "รอตรวจทานสิทธิบัตร",
+    V.UNKNOWN: "ไม่ทราบ",
 }
 BOLAR_NOTE = ("สามารถผลิต/ใช้ตามสิทธิบัตรที่ยังมีผลเพื่อการขึ้นทะเบียนตำรับยาได้ก่อนสิทธิบัตรสิ้นอายุ "
               "(ข้อยกเว้นตามมาตรา 36 วรรคสอง (7) พ.ร.บ.สิทธิบัตร) แต่ผลิตเพื่อจำหน่ายได้หลังสิทธิบัตรสิ้นอายุ")
@@ -58,23 +57,24 @@ class LinkView:
     status: str
 
 
-def assess(product: DrugProduct, items: list[LinkView], as_of: date, require_review: bool = False) -> dict:
+def assess(product: DrugProduct, items: list[LinkView], as_of: date, require_review: bool = False,
+           orange_book_note: str | None = None) -> dict:
     """require_review: a drug is only "free" once an expert has confirmed every related (non-rejected) link;
-    until then a would-be "free" verdict becomes "pending_review"."""
-    relevant = [i for i in items if i.link.blocking_level != "not_relevant" and i.status != "not_published"]
+    until then a would-be "free" verdict becomes "pending_review". orange_book_note only goes into the summary."""
+    relevant = [i for i in items if i.link.blocking_level != B.NOT_RELEVANT and i.status != S.NOT_PUBLISHED]
     active = [i for i in relevant if i.status in ACTIVE]
-    blocking = [i for i in active if i.link.blocking_level == "blocking"]
-    avoidable = [i for i in active if i.link.blocking_level != "blocking"]
-    warnings = [i for i in relevant if i.status == "likely_abandoned"]
+    blocking = [i for i in active if i.link.blocking_level == B.BLOCKING]
+    avoidable = [i for i in active if i.link.blocking_level != B.BLOCKING]
+    warnings = [i for i in relevant if i.status == S.LIKELY_ABANDONED]
 
     if blocking:
-        verdict = "blocked_until"
+        verdict = V.BLOCKED_UNTIL
     elif avoidable:
-        verdict = "free_with_avoidance"
-    elif require_review and any(i.link.review_state != "confirmed" for i in items):
-        verdict = "pending_review"
+        verdict = V.FREE_WITH_AVOIDANCE
+    elif require_review and any(i.link.review_state != ReviewState.CONFIRMED for i in items):
+        verdict = V.PENDING_REVIEW
     else:
-        verdict = "free"
+        verdict = V.FREE
     free_date = max((i.patent.expiry_date for i in blocking if i.patent.expiry_date), default=None)
     fully_clear = max((i.patent.expiry_date for i in active if i.patent.expiry_date), default=None)
 
@@ -102,15 +102,17 @@ def assess(product: DrugProduct, items: list[LinkView], as_of: date, require_rev
         "avoid": avoid_rows,
         "warnings": [row(i) for i in warnings],
         "counts": counts,
-        "summary_th": summary_th(product, verdict, counts, blocking, avoid_rows, warnings, free_date, as_of),
+        "summary_th": summary_th(product, verdict, counts, blocking, avoid_rows, warnings, free_date, as_of,
+                                 orange_book_note),
     }
 
 
-def summary_th(product, verdict, counts, blocking, avoid_rows, warnings, free_date, as_of) -> str:
+def summary_th(product, verdict, counts, blocking, avoid_rows, warnings, free_date, as_of,
+               orange_book_note=None) -> str:
     lines = [f"ความเป็นไปได้ในการผลิตเชิงพาณิชย์ {product.name} ในประเด็นที่เกี่ยวข้องกับสิทธิบัตร "
              f"(ประเมิน ณ วันที่ {to_be_str(as_of)})"]
-    if product.orange_book_note:
-        lines.append(f"ข้อมูล Orange Book (สหรัฐอเมริกา): {product.orange_book_note}")
+    if orange_book_note:
+        lines.append(f"ข้อมูล Orange Book (สหรัฐอเมริกา): {orange_book_note}")
     total = sum(counts.values())
     if total == 0:
         lines.append("ในประเทศไทยไม่พบสิทธิบัตรหรือคำขอรับสิทธิบัตรที่เกี่ยวข้อง")
@@ -131,12 +133,12 @@ def summary_th(product, verdict, counts, blocking, avoid_rows, warnings, free_da
     if warnings:
         lines.append("คำขอที่น่าจะถูกละทิ้ง (ควรตรวจสอบแฟ้มคำขอที่กรมทรัพย์สินทางปัญญา): "
                      + ", ".join(w.patent.application_no for w in warnings))
-    if verdict == "blocked_until":
+    if verdict == V.BLOCKED_UNTIL:
         concl = (f"ยังไม่สามารถผลิตยาชื่อสามัญ {product.name} เพื่อจำหน่ายได้จนกว่าสิทธิบัตรตัวยาสำคัญสิ้นอายุ "
                  f"({to_be_str(free_date)})")
-    elif verdict == "free_with_avoidance":
+    elif verdict == V.FREE_WITH_AVOIDANCE:
         concl = f"บริษัทยาสามารถผลิตยาชื่อสามัญ {product.name} จำหน่ายได้ โดยต้องหลีกเลี่ยงรายการข้างต้น"
-    elif verdict == "pending_review":
+    elif verdict == V.PENDING_REVIEW:
         concl = (f"ยังไม่พบสิทธิบัตรที่มีผลคุ้มครอง {product.name} แต่ผู้เชี่ยวชาญยังตรวจทานสิทธิบัตรที่เกี่ยวข้องไม่ครบ "
                  f"จึงยังไม่สามารถยืนยันได้ว่าผลิตได้")
     else:
@@ -147,37 +149,50 @@ def summary_th(product, verdict, counts, blocking, avoid_rows, warnings, free_da
     return "\n".join(lines)
 
 
+def product_substances(s, product: DrugProduct) -> list[Substance]:
+    ids = [ps.substance_id for ps in s.exec(select(ProductSubstance).where(ProductSubstance.drug_product_id == product.id))]
+    return [s.get(Substance, i) for i in ids]
+
+
+def product_orange_book_note(s, product: DrugProduct) -> str | None:
+    """The product's Orange Book note: its substance's note, or one 'inn: note' line per substance."""
+    subs = [x for x in product_substances(s, product) if x.orange_book_note]
+    if len(subs) <= 1:
+        return subs[0].orange_book_note if subs else None
+    return "\n".join(f"{x.inn_name}: {x.orange_book_note}" for x in subs)
+
+
 def load_views(s, product: DrugProduct, as_of: date, mode: str) -> list[LinkView]:
-    sub_ids = [ps.substance_id for ps in s.exec(select(ProductSubstance).where(ProductSubstance.drug_product_id == product.id))]
+    sub_ids = [x.id for x in product_substances(s, product)]
     out = []
     for sid in sub_ids:
         sub = s.get(Substance, sid)
         for link in s.exec(select(PatentLink).where(PatentLink.substance_id == sid)):
             if link.drug_product_id not in (None, product.id):
                 continue
-            if link.review_state == "rejected":
+            if link.review_state == ReviewState.REJECTED:
                 continue
-            if mode == "confirmed" and link.review_state != "confirmed":
+            if mode == AssessmentMode.CONFIRMED and link.review_state != ReviewState.CONFIRMED:
                 continue
             p = s.get(Patent, link.patent_id)
             out.append(LinkView(link, p, sub, status_as_of(p, as_of)))
     return out
 
 
-def run(as_of: date | None = None, modes=("auto", "confirmed"), db_path=None) -> list[dict]:
+def run(as_of: date | None = None, modes=(AssessmentMode.AUTO, AssessmentMode.CONFIRMED), db_path=None) -> list[dict]:
     as_of = as_of or date.today()
     init_db(db_path)
     results = []
     with session(db_path) as s:
         for product in s.exec(select(DrugProduct)):
             for mode in modes:
-                res = assess(product, load_views(s, product, as_of, mode), as_of, require_review=True)
+                res = assess(product, load_views(s, product, as_of, mode), as_of, require_review=True,
+                             orange_book_note=product_orange_book_note(s, product))
                 s.add(Assessment(
                     drug_product_id=product.id, as_of_date=as_of, mode=mode, verdict=res["verdict"],
                     free_date=res["free_date"], fully_clear_date=res["fully_clear_date"],
-                    avoid_json=json.dumps({"blocking": res["blocking"], "avoid": res["avoid"],
-                                           "warnings": res["warnings"]}, ensure_ascii=False),
-                    counts_json=json.dumps(res["counts"]), auto_summary_th=res["summary_th"]))
+                    avoid_lists={k: res[k] for k in ("blocking", "avoid", "warnings")},
+                    status_counts=res["counts"], auto_summary_th=res["summary_th"]))
                 results.append({"product": product.name, "mode": mode, **res})
         s.commit()
     return results

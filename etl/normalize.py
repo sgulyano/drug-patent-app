@@ -9,13 +9,13 @@ import yaml
 from sqlmodel import select
 
 from backend.db import init_db, session
-from backend.models import Patent, StatusMap
+from backend.models import ExpirySource as E, Patent, PatentKind, PatentStatus as S, StatusMap
 from etl.thai import add_years
 
 ROOT = Path(__file__).resolve().parent.parent
 _RULES = yaml.safe_load((ROOT / "seed" / "status_map.yaml").read_text(encoding="utf-8"))
 
-ACTIVE = {"granted_active", "pending_unexamined", "pending_examining"}
+ACTIVE = {S.GRANTED_ACTIVE, S.PENDING_UNEXAMINED, S.PENDING_EXAMINING}  # statuses that still restrict a generic
 EXAM_REQUEST_YEARS = 5  # Thai Patent Act s.29: request examination within 5 years of publication
 
 
@@ -29,40 +29,39 @@ def norm_status(raw: str | None, overrides: dict | None = None) -> str:
     return _RULES["default"]
 
 
-def compute_expiry(p: Patent) -> tuple[date | None, str | None]:
+def compute_expiry(p: Patent) -> tuple[date | None, E | None]:
     if not p.filing_date:
         return None, None
-    if p.kind == "petty":
-        return add_years(p.filing_date, 10) - timedelta(days=1), "computed_petty_10y"
-    if p.kind == "design":
-        return add_years(p.filing_date, 10) - timedelta(days=1), "computed_design_10y"
-    return add_years(p.filing_date, 20) - timedelta(days=1), "computed_invention_20y"
+    if p.kind == PatentKind.PETTY:
+        return add_years(p.filing_date, 10) - timedelta(days=1), E.COMPUTED_PETTY_10Y
+    if p.kind == PatentKind.DESIGN:
+        return add_years(p.filing_date, 10) - timedelta(days=1), E.COMPUTED_DESIGN_10Y
+    return add_years(p.filing_date, 20) - timedelta(days=1), E.COMPUTED_INVENTION_20Y
 
 
 def status_as_of(p: Patent, as_of: date) -> str:
     """Best estimate of the patent's legal state on `as_of`, given today's recorded status.
 
-    Returns one of: not_published, granted_active, pending_unexamined, pending_examining,
-    likely_abandoned, expired, abandoned, revoked.
+    Returns a PatentStatus, including the as-of-only not_published and likely_abandoned.
     """
     if p.publication_date and p.publication_date > as_of:
-        return "not_published"
+        return S.NOT_PUBLISHED
     if p.expiry_date and p.expiry_date < as_of:
-        return "expired"
-    norm = p.status_norm or "pending_unexamined"
+        return S.EXPIRED
+    norm = p.status_norm or S.PENDING_UNEXAMINED
     exam_deadline = add_years(p.publication_date, EXAM_REQUEST_YEARS) if p.publication_date else None
     granted_by_then = bool(p.grant_date and p.grant_date <= as_of)
-    if norm == "revoked":
-        return "revoked"
-    if norm in ("granted_active", "expired"):
-        return "granted_active" if granted_by_then or not p.grant_date else "pending_examining"
-    if norm == "abandoned":
+    if norm == S.REVOKED:
+        return S.REVOKED
+    if norm in (S.GRANTED_ACTIVE, S.EXPIRED):
+        return S.GRANTED_ACTIVE if granted_by_then or not p.grant_date else S.PENDING_EXAMINING
+    if norm == S.ABANDONED:
         # Date of abandonment is unknown; if the exam-request window was still open on as_of, it was still alive.
         if exam_deadline and exam_deadline >= as_of:
-            return "pending_unexamined"
-        return "abandoned"
-    if norm == "pending_unexamined" and exam_deadline and exam_deadline < as_of:
-        return "likely_abandoned"
+            return S.PENDING_UNEXAMINED
+        return S.ABANDONED
+    if norm == S.PENDING_UNEXAMINED and exam_deadline and exam_deadline < as_of:
+        return S.LIKELY_ABANDONED
     return norm
 
 

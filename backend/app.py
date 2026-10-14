@@ -17,7 +17,7 @@ from sqlmodel import func, select
 from backend.db import ROOT, init_db, session
 from backend.models import (Assessment, DrugProduct, ExternalPatentRef, Patent, PatentLink, ProductSubstance,
                             Substance)
-from etl.assess import CATEGORY_TH, STATUS_TH, VERDICT_TH, assess, load_views
+from etl.assess import CATEGORY_TH, STATUS_TH, VERDICT_TH, assess, load_views, product_orange_book_note
 from etl.export_csv import TABLES, VIEWS, query, to_csv_bytes, view_sql
 from etl.normalize import status_as_of
 from etl.thai import to_be_str
@@ -66,7 +66,7 @@ def patent_row(p: Patent, as_of: date | None = None, full: bool = False) -> dict
         out["status_as_of"], out["status_as_of_th"] = st, STATUS_TH.get(st)
     if full:
         out.update({"all_claims": p.all_claims, "inventors": p.inventors,
-                    "discovered_via": json.loads(p.discovered_via or "[]"), "receive_date": _d(p.receive_date)})
+                    "discovered_via": p.discovered_via or [], "receive_date": _d(p.receive_date)})
     return out
 
 
@@ -78,8 +78,8 @@ def substance_row(s: Substance) -> dict:
         "structure_img_url": f"/api/structure/{s.pubchem_cid}.png" if s.pubchem_cid else None,
         "description": s.description, "indication": s.indication,
         "mechanism": s.mechanism, "atc_code": s.atc_code,
-        "name_variants_th": json.loads(s.name_variants_th) if s.name_variants_th else None,
-        "synonyms_en": json.loads(s.synonyms_en or "[]"),
+        "name_variants_th": s.name_variants_th, "synonyms_en": s.synonyms_en or [],
+        "orange_book_note": s.orange_book_note,
         "pubchem_url": f"https://pubchem.ncbi.nlm.nih.gov/compound/{s.pubchem_cid}" if s.pubchem_cid else None,
     }
 
@@ -89,7 +89,7 @@ def link_row(l: PatentLink) -> dict:
         "id": l.id, "patent_id": l.patent_id, "substance_id": l.substance_id, "drug_product_id": l.drug_product_id,
         "claim_category": l.claim_category, "category_th": CATEGORY_TH.get(l.claim_category),
         "blocking_level": l.blocking_level, "design_around_note": l.design_around_note,
-        "match_method": l.match_method, "matched_terms": json.loads(l.matched_terms or "{}"),
+        "match_method": l.match_method, "matched_terms": l.matched_terms or {},
         "confidence": l.confidence, "evidence_snippet": l.evidence_snippet, "rationale": l.rationale,
         "review_state": l.review_state, "reviewed_at": _d(l.reviewed_at),
         "thai_patentability_flag": l.thai_patentability_flag,
@@ -109,7 +109,8 @@ def review_status(s, dp: DrugProduct) -> dict:
 
 
 def live_assessment(s, dp: DrugProduct, as_of: date, mode: str) -> dict:
-    res = assess(dp, load_views(s, dp, as_of, mode), as_of, require_review=True)
+    res = assess(dp, load_views(s, dp, as_of, mode), as_of, require_review=True,
+                 orange_book_note=product_orange_book_note(s, dp))
     stored = s.exec(select(Assessment).where(Assessment.drug_product_id == dp.id, Assessment.mode == mode,
                                              Assessment.analyst_override.is_not(None))
                     .order_by(Assessment.id.desc())).first()
@@ -212,7 +213,7 @@ def list_drugs(as_of: Optional[date] = None, mode: str = "auto"):
             n_links = sum(1 for _ in s.exec(select(PatentLink.id).where(
                 PatentLink.substance_id.in_([x.id for x in subs]), PatentLink.review_state != "rejected")))
             out.append({"id": dp.id, "name": dp.name, "dosage_form": dp.dosage_form,
-                        "orange_book_note": dp.orange_book_note,
+                        "orange_book_note": product_orange_book_note(s, dp),
                         "substances": [substance_row(x) for x in subs], "n_links": n_links,
                         "assessment": {k: a[k] for k in ("verdict", "verdict_th", "free_date", "free_date_be",
                                                          "fully_clear_date", "counts", "analyst_override")},
@@ -238,7 +239,8 @@ def get_drug(product_id: int, as_of: Optional[date] = None, mode: str = "auto"):
                  "use_code": r.use_code, "expiry": _d(r.expiry), "product_desc": r.product_desc,
                  "applicant": r.applicant}
                 for sub in subs for r in s.exec(select(ExternalPatentRef).where(ExternalPatentRef.substance_id == sub.id))]
-        return {"id": dp.id, "name": dp.name, "dosage_form": dp.dosage_form, "orange_book_note": dp.orange_book_note,
+        return {"id": dp.id, "name": dp.name, "dosage_form": dp.dosage_form,
+                "orange_book_note": product_orange_book_note(s, dp),
                 "th_generic_registered": dp.th_generic_registered, "th_generic_note": dp.th_generic_note,
                 "substances": [substance_row(x) for x in subs], "links": links, "orange_book": refs,
                 "assessment": live_assessment(s, dp, as_of, mode), "review": review_status(s, dp)}
@@ -267,13 +269,14 @@ def override(product_id: int, body: dict = Body(...)):
         dp = s.get(DrugProduct, product_id)
         if not dp:
             raise HTTPException(404)
-        res = assess(dp, load_views(s, dp, as_of, mode), as_of, require_review=True)
+        res = assess(dp, load_views(s, dp, as_of, mode), as_of, require_review=True,
+                     orange_book_note=product_orange_book_note(s, dp))
         a = Assessment(drug_product_id=dp.id, as_of_date=as_of, mode=mode, verdict=res["verdict"],
                        free_date=res["free_date"], fully_clear_date=res["fully_clear_date"],
                        auto_summary_th=res["summary_th"], analyst_override=body.get("verdict") or None,
                        analyst_note=body.get("note") or None,
-                       avoid_json=json.dumps({"blocking": res["blocking"], "avoid": res["avoid"]}, ensure_ascii=False),
-                       counts_json=json.dumps(res["counts"]))
+                       avoid_lists={k: res[k] for k in ("blocking", "avoid", "warnings")},
+                       status_counts=res["counts"])
         s.add(a)
         s.commit()
         return {"ok": True}

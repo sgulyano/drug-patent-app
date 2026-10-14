@@ -1,11 +1,18 @@
-"""Engine, sessions and the flattened SQL views used by the API, CSV export and any SQLite browser."""
+"""Engine, sessions, schema migration and the flattened SQL views used by the API, CSV export and any SQLite
+browser."""
+import json
+import logging
 import os
+import sqlite3
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import event, text
 from sqlmodel import Session, SQLModel, create_engine
 
 from backend import models  # noqa: F401  (registers tables)
+
+log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("PATENTAPP_DATA", ROOT / "data"))
@@ -18,7 +25,8 @@ def get_engine(db_path: Path | str | None = None):
     path = str(db_path or DB_PATH)
     if path not in _engines:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False, "timeout": 120})
+        engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False, "timeout": 120},
+                               json_serializer=lambda o: json.dumps(o, ensure_ascii=False))  # keep Thai readable
 
         @event.listens_for(engine, "connect")
         def _pragmas(dbapi_conn, _):
@@ -58,8 +66,8 @@ VIEWS = {
     "v_drugs": """
         SELECT dp.name AS product, dp.dosage_form, s.inn_name, s.salt_form, s.pubchem_cid, s.parent_cid,
                s.iupac_name, s.molecular_formula, s.molecular_weight, s.smiles, s.inchikey,
-               s.indication, s.mechanism, s.description, s.structure_img_url, s.name_variants_th,
-               dp.th_generic_registered, dp.orange_book_note
+               s.indication, s.mechanism, s.description, s.name_variants_th,
+               dp.th_generic_registered, s.orange_book_note
         FROM drug_product dp
         JOIN product_substance ps ON ps.drug_product_id = dp.id
         JOIN substance s ON s.id = ps.substance_id""",
@@ -85,16 +93,71 @@ VIEWS = {
 }
 
 
+# Schema changes create_all can't make on an existing table. Each step is skipped once applied.
+RENAMED = {("assessment", "avoid_json"): "avoid_lists", ("assessment", "counts_json"): "status_counts"}
+DROPPED = {
+    "drug_product": ["route", "strengths", "on_target_list", "orange_book_note"],  # note moved to substance
+    "substance": ["structure_img_url"],  # built from pubchem_cid instead
+    "external_patent_ref": ["found_in_th"],
+}
+
+
+def _columns(conn, table: str) -> set[str]:
+    return {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})"))}
+
+
+def _pending_migration(conn) -> bool:
+    return (any(old in _columns(conn, t) for (t, old) in RENAMED)
+            or any(c in _columns(conn, t) for t, cols in DROPPED.items() for c in cols))
+
+
+def _backup(db_path: str):
+    """Copy the database (WAL included) next to itself before a destructive migration."""
+    dst = f"{db_path}.pre-migration-{date.today().isoformat()}"
+    src, out = sqlite3.connect(db_path), sqlite3.connect(dst)
+    with out:
+        src.backup(out)
+    src.close()
+    out.close()
+    log.warning("schema migration: backed up %s to %s", db_path, dst)
+
+
 def init_db(db_path=None):
     engine = get_engine(db_path)
+    with engine.connect() as conn:
+        migrate = _pending_migration(conn)
+    if migrate:
+        _backup(engine.url.database)
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
-        for table in SQLModel.metadata.sorted_tables:  # add columns introduced after the table was created
-            have = {r[1] for r in conn.execute(text(f"PRAGMA table_info({table.name})"))}
-            for col in table.columns:
-                if col.name not in have:
-                    conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}"))
+        # views first: SQLite won't drop or rename a column a view uses
         existing = dict(conn.execute(text("SELECT name, sql FROM sqlite_master WHERE type='view'")).all())
+        if migrate:
+            for name in existing:
+                conn.execute(text(f"DROP VIEW IF EXISTS {name}"))
+            existing = {}
+        renamed_from = {(t, new): old for (t, old), new in RENAMED.items()}
+        for table in SQLModel.metadata.sorted_tables:  # add columns introduced after the table was created
+            have = _columns(conn, table.name)
+            for col in table.columns:
+                if col.name in have or renamed_from.get((table.name, col.name)) in have:
+                    continue  # present, or about to be renamed into place
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}"))
+        if "orange_book_note" in _columns(conn, "drug_product"):
+            conn.execute(text("""
+                UPDATE substance SET orange_book_note = (
+                    SELECT dp.orange_book_note FROM drug_product dp
+                    JOIN product_substance ps ON ps.drug_product_id = dp.id
+                    WHERE ps.substance_id = substance.id AND dp.orange_book_note IS NOT NULL LIMIT 1)
+                WHERE orange_book_note IS NULL"""))
+        for (table, old), new in RENAMED.items():
+            have = _columns(conn, table)
+            if old in have and new not in have:
+                conn.execute(text(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}"))
+        for table, cols in DROPPED.items():
+            for col in cols:
+                if col in _columns(conn, table):
+                    conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {col}"))
         for name, sql in VIEWS.items():
             ddl = f"CREATE VIEW {name} AS {sql}"
             if existing.get(name) == ddl:

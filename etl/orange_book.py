@@ -6,7 +6,6 @@ Note: this is today's Orange Book, not a historical snapshot. It is context for 
 by the blind evaluation.
 """
 import csv
-import json
 import io
 import logging
 import zipfile
@@ -16,7 +15,7 @@ from datetime import datetime
 from sqlmodel import delete, select
 
 from backend.db import DATA_DIR, init_db, session
-from backend.models import DrugProduct, ExternalPatentRef, ProductSubstance, Substance
+from backend.models import ExternalPatentRef, Substance
 from etl.http import PoliteClient
 
 log = logging.getLogger(__name__)
@@ -54,7 +53,7 @@ def run(refresh: bool = False):
     with session() as s:
         for sub in s.exec(select(Substance)):
             # US names can differ from the INN (USAN), so also try single-word PubChem synonyms
-            syns = [x for x in json.loads(sub.synonyms_en or "[]") if x.isalpha()][:15]
+            syns = [x for x in sub.synonyms_en or [] if x.isalpha()][:15]
             keys = {sub.inn_name.upper(), *(x.upper() for x in syns)}
             mine = [p for p in products if keys & set(p["Ingredient"].upper().replace(",", " ").replace(";", " ").split())]
             ndas = {(p["Appl_Type"], p["Appl_No"]) for p in mine if p["Appl_Type"] == "N"}
@@ -76,7 +75,7 @@ def run(refresh: bool = False):
                         product_desc=f'{prod["Trade_Name"]} ({prod["DF;Route"]})', applicant=prod["Applicant_Full_Name"])
             for ref in seen.values():
                 s.add(ref)
-            # product-level note
+            # substance-level note, shown on every product that contains it
             kinds = defaultdict(int)
             for ref in seen.values():
                 kinds[ref.claim_type] += 1
@@ -89,10 +88,8 @@ def run(refresh: bool = False):
                         + f"; ยาชื่อสามัญ (ANDA) ได้รับอนุมัติ {len(andas)} รายการ")
             else:
                 note = "ไม่พบใน Orange Book (ยาไม่ได้รับอนุมัติในสหรัฐอเมริกา)"
-            for ps in s.exec(select(ProductSubstance).where(ProductSubstance.substance_id == sub.id)):
-                dp = s.get(DrugProduct, ps.drug_product_id)
-                dp.orange_book_note = note
-                s.add(dp)
+            sub.orange_book_note = note
+            s.add(sub)
             log.info("%s: %s", sub.inn_name, note)
         s.commit()
 
