@@ -1,0 +1,1 @@
+{"root":["./src/api.ts","./src/main.tsx","./src/viz.ts","./src/components/graph.tsx","./src/components/matrix.tsx","./src/components/timeline.tsx","./src/components/ui.tsx","./src/pages/drugdetail.tsx","./src/pages/drugs.tsx","./src/pages/eval.tsx","./src/pages/matching.tsx","./src/pages/patentdetail.tsx","./src/pages/patents.tsx","./src/pages/review.tsx"],"version":"5.6.3"}

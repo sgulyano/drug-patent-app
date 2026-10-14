@@ -1,0 +1,27 @@
+# Generic mapping of the DIP site's Thai status vocabulary -> normalised status.
+# Rules are matched in order as substrings of the raw status text. First match wins.
+# Exact raw strings seen in the DB are also written to the status_map table so they can be edited.
+rules:
+  - contains: "เพิกถอน"            # revoked
+    status: revoked
+  - contains: "สิ้นอายุ"           # expired
+    status: expired
+  - contains: "ยกคำขอ"             # application rejected
+    status: abandoned
+  - contains: "ละทิ้ง"             # abandoned
+    status: abandoned
+  - contains: "ถอนคำขอ"            # withdrawn
+    status: abandoned
+  - contains: "ค่าธรรมเนียมรายปี"   # paying annual fees -> granted & in force
+    status: granted_active
+  - contains: "ออกหนังสือสำคัญ"     # certificate issued
+    status: granted_active
+  - contains: "รับจดทะเบียน"        # registered
+    status: granted_active
+  - contains: "ตรวจสอบการประดิษฐ์"   # substantive examination requested / in progress
+    status: pending_examining
+  - contains: "แก้ไขเพิ่มเติม"       # amendments during examination
+    status: pending_examining
+  - contains: "ประกาศโฆษณา"         # published, examination not yet requested
+    status: pending_unexamined
+default: pending_unexamined

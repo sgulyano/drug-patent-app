@@ -1,0 +1,108 @@
+# HELD-OUT ANSWER KEY — transcribed by hand from the Thai FDA/DIP report 202304201661685407.pdf
+# ("รายงานข้อมูลสิทธิบัตรของรายการยาในบัญชียามุ่งเป้าที่มีลำดับความสำคัญสูง 10 รายการ", data as of 20 Jul 2022).
+#
+# ONLY eval/score.py may read this file. tests/test_no_leak.py fails the build if any pipeline/backend code
+# reads eval/ or contains any application/patent number below.
+#
+# Fields per patent: appno, patent_no, filing (CE), expiry (as printed, CE), pdf_type (claim type as printed),
+# pdf_status (normalised from the printed status as of the report date), and flags:
+#   unpublished: true  -> abandoned before publication; not discoverable from public data, excluded from recall
+#   suspect: "..."     -> the PDF itself looks inconsistent here; disagreements go to human adjudication
+# verdict.avoid lists the appnos the PDF's conclusion tells manufacturers to avoid; verdict.avoid_optional are
+# items the PDF lists as still pending/active in its text but leaves out of (or garbles in) the conclusion.
+as_of: 2022-07-20
+products:
+  - product: Tiotropium bromide cap for inhaler / solution for inhalation
+    patents:
+      - {appno: "9701005202", filing: 1997-12-18, expiry: 2017-12-17, pdf_type: process, pdf_status: expired, suspect: "printed as Process Claim but claim 1 is an aqueous formulation"}
+      - {appno: "0101004146", patent_no: "68680", filing: 2001-10-11, expiry: 2021-10-10, pdf_type: drug_substance, pdf_status: expired}
+      - {appno: "0101004147", patent_no: "31179", filing: 2001-10-11, expiry: 2021-10-10, pdf_type: product, pdf_status: expired}
+      - {appno: "0101004148", filing: 2001-10-11, pdf_type: process, pdf_status: abandoned}
+      - {appno: "0101004408", patent_no: "82747", filing: 2001-10-30, expiry: 2021-10-29, pdf_type: product, pdf_status: expired}
+      - {appno: "0101004409", filing: 2001-10-30, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0101005207", patent_no: "33013", filing: 2001-12-21, pdf_type: process, pdf_status: revoked}
+      - {appno: "0201002292", filing: 2002-06-21, pdf_type: product, pdf_status: abandoned, suspect: "anhydrous crystal form printed as Product Claim"}
+      - {appno: "0201002008", patent_no: "79534", filing: 2002-05-31, expiry: 2022-05-30, pdf_type: product, pdf_status: expired}
+      - {appno: "0201003420", filing: 2002-09-11, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0301000969", patent_no: "73748", filing: 2003-03-19, expiry: 2023-03-18, pdf_type: product, pdf_status: granted_active, suspect: "micronised crystal form; conclusion calls it Drug Substance"}
+      - {appno: "0301001312", patent_no: "66639", filing: 2003-04-08, expiry: 2024-12-29, pdf_type: use, pdf_status: granted_active, suspect: "printed expiry 29/12/2567 is not filing+20y (would be 07/04/2566)"}
+      - {appno: "0301001354", patent_no: "78151", filing: 2003-04-10, expiry: 2023-04-09, pdf_type: product, pdf_status: granted_active}
+      - {appno: "0301004490", filing: 2003-11-27, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0401000624", filing: 2004-02-25, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0401004320", filing: 2004-11-02, pdf_type: process, pdf_status: abandoned}
+      - {appno: "0401004321", filing: 2004-11-02, pdf_type: process, pdf_status: abandoned}
+      - {appno: "0701000003", filing: 2007-01-03, pdf_type: use, pdf_status: abandoned}
+      - {appno: "0801003732", filing: 2008-07-16, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0801003031", filing: 2008-06-13, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0901004442", patent_no: "87169", filing: 2009-09-30, expiry: 2029-09-29, pdf_type: product, pdf_status: granted_active}
+      - {appno: "1401004558", filing: 2013-02-08, expiry: 2033-02-07, pdf_type: process, pdf_status: pending}
+      - {appno: "1701006798", filing: 2016-05-17, pdf_type: product, pdf_status: pending, suspect: "printed expiry '16/0/2579' is garbled"}
+      - {appno: "1801002829", filing: 2016-11-14, expiry: 2036-11-13, pdf_type: process, pdf_status: pending}
+      - {appno: "1801002830", filing: 2016-11-14, expiry: 2036-11-13, pdf_type: process, pdf_status: pending}
+      - {appno: "1901008171", filing: 2017-06-29, expiry: 2037-06-28, pdf_type: product, pdf_status: pending}
+    verdict:
+      class: free_with_avoidance
+      avoid: ["0301000969", "0901004442", "1401004558", "0301001354", "1701006798", "0301001312", "1901008171"]
+      avoid_optional: ["1801002829", "1801002830"]
+
+  - product: Micafungin injection
+    patents: []
+    verdict: {class: free, avoid: []}
+
+  - product: Leuprorelin powder and solvent for prolonged-release suspension for injection
+    patents:
+      - {appno: "9101001218", patent_no: "13432", filing: 1991-08-19, expiry: 2011-08-18, pdf_type: product, pdf_status: expired}
+      - {appno: "9301001296", filing: 1993-07-22, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0201002352", patent_no: "60841", filing: 2002-06-26, expiry: 2022-06-25, pdf_type: product, pdf_status: expired}
+      - {appno: "0201002351", patent_no: "64759", filing: 2002-06-26, expiry: 2022-06-25, pdf_type: product, pdf_status: expired, suspect: "conclusion prints the patent number as 64789"}
+      - {appno: "0501003065", filing: 2005-07-01, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0701006463", patent_no: "76833", filing: 2007-12-17, expiry: 2027-12-16, pdf_type: product, pdf_status: granted_active}
+    verdict: {class: free_with_avoidance, avoid: ["0701006463"]}
+
+  - product: Edoxaban tablet
+    patents:
+      - {appno: "0201002257", patent_no: "68631", filing: 2002-06-19, expiry: 2022-06-18, pdf_type: drug_substance, pdf_status: expired}
+      - {appno: "1401003231", filing: 2012-12-13, pdf_type: use, pdf_status: abandoned, suspect: "PDF infers abandonment from no examination request within 5 years"}
+    verdict: {class: free, avoid: []}
+
+  - product: Mycophenolate gastro-resistant tablet
+    patents:
+      - {appno: "0001003002", filing: 2000-08-10, pdf_type: use, pdf_status: abandoned}
+    verdict: {class: free, avoid: []}
+
+  - product: Desvenlafaxine prolonged-release tablet
+    patents:
+      - {appno: "0201000435", filing: 2002-02-11, expiry: 2022-02-10, pdf_type: drug_substance, pdf_status: expired}
+      - {appno: "0401003909", filing: 2004-10-07, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0601004217", filing: 2006-09-01, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0601004218", filing: 2006-09-01, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0601003299", filing: 2006-07-13, pdf_type: product, pdf_status: abandoned}
+    verdict: {class: free, avoid: []}
+
+  - product: Bilastine tablet
+    patents: []
+    verdict: {class: free, avoid: []}
+
+  - product: Lercanidipine hydrochloride tablet
+    patents:
+      - {appno: "9601001474", filing: 1996-05-10, pdf_type: process, pdf_status: abandoned}
+      - {appno: "0501003916", filing: 2005-08-22, pdf_type: drug_substance, pdf_status: abandoned}
+      - {appno: "0501004634", filing: 2005-10-03, pdf_type: product, pdf_status: abandoned}
+      - {appno: "0601000801", filing: 2006-02-24, pdf_type: drug_substance, pdf_status: abandoned, suspect: "filing year printed as 2449"}
+      - {appno: "0601000800", patent_no: "88003", filing: 2006-02-24, expiry: 2026-02-23, pdf_type: product, pdf_status: granted_active}
+      - {appno: "0701000472", filing: 2007-02-02, pdf_status: abandoned, unpublished: true}
+      - {appno: "1301003104", filing: 2011-12-07, expiry: 2031-12-06, pdf_type: product, pdf_status: pending}
+    verdict:
+      class: free_with_avoidance
+      avoid: ["0601000800"]
+      avoid_optional: ["1301003104"]
+
+  - product: Febuxostat tablet
+    patents:
+      - {appno: "9901004674", patent_no: "59633", filing: 1999-12-14, expiry: 2019-12-13, pdf_type: process, pdf_status: expired, suspect: "claims a crystal form (polymorph) produced by the process"}
+      - {appno: "1501007147", filing: 2014-05-30, pdf_status: abandoned, unpublished: true}
+    verdict: {class: free, avoid: []}
+
+  - product: Entacapone tablet
+    patents: []
+    verdict: {class: free, avoid: []}

@@ -1,0 +1,14 @@
+# Target-list products (บัญชียามุ่งเป้า, high priority). This is the ONLY drug input to the pipeline:
+# product names and dosage forms as an analyst receives them. No Thai names, patent numbers, statuses or
+# verdicts belong here — the pipeline must discover those itself (see eval/ for the held-out answer key).
+products:
+  - name: Tiotropium bromide cap for inhaler / solution for inhalation
+  - name: Micafungin injection
+  - name: Leuprorelin powder and solvent for prolonged-release suspension for injection
+  - name: Edoxaban tablet
+  - name: Mycophenolate gastro-resistant tablet
+  - name: Desvenlafaxine prolonged-release tablet
+  - name: Bilastine tablet
+  - name: Lercanidipine hydrochloride tablet
+  - name: Febuxostat tablet
+  - name: Entacapone tablet
