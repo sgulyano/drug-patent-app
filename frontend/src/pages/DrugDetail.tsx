@@ -112,6 +112,8 @@ function VerdictPanel({ d, onSaved }: { d: DD; onSaved: () => void }) {
   );
 }
 
+const REVIEW_LABEL: Record<string, string> = { candidate: "รอตรวจทาน", confirmed: "ยืนยันแล้ว", rejected: "ไม่เกี่ยวข้อง" };
+
 export function LinksTable({ links, onChanged }: { links: (PLink & { patent: any })[]; onChanged: () => void }) {
   const set = (l: PLink, body: Record<string, unknown>) => api.updateLink(l.id, body).then(onChanged);
   const sorted = [...links].sort((x, y) => (x.patent.filing_date ?? "").localeCompare(y.patent.filing_date ?? ""));
@@ -131,9 +133,10 @@ export function LinksTable({ links, onChanged }: { links: (PLink & { patent: any
           <td className="small">{l.patent.expiry_date_be ?? "—"}</td>
           <td className="clip small">{l.design_around_note}</td>
           <td><div className="row" style={{ gap: 4 }}>
+            <button className={l.review_state === "candidate" ? "primary" : ""} title="รอตรวจทาน" onClick={() => set(l, { review_state: "candidate" })}>⏳</button>
             <button className={l.review_state === "confirmed" ? "ok primary" : "ok"} title="ยืนยัน" onClick={() => set(l, { review_state: "confirmed" })}>✓</button>
             <button className={l.review_state === "rejected" ? "no primary" : "no"} title="ไม่เกี่ยวข้อง" onClick={() => set(l, { review_state: "rejected" })}>✕</button>
-          </div><div className="muted small">{l.review_state}</div></td>
+          </div><div className="muted small">{REVIEW_LABEL[l.review_state] ?? l.review_state}</div></td>
         </tr>))}</tbody>
     </table>{!links.length && <div className="empty">ไม่พบ</div>}</div>
   );

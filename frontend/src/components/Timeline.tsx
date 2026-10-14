@@ -16,7 +16,7 @@ const AXIS_H = 26;
 export function Timeline({ rows, asOf, freeDate, width = 1100 }: { rows: Row[]; asOf: string; freeDate?: string | null; width?: number }) {
   const [hover, setHover] = useState<{ x: number; y: number; r: Row } | null>(null);
   const data = useMemo(() => rows
-    .filter((r) => r.blocking_level !== "not_relevant" && r.patent.filing_date)
+    .filter((r) => r.review_state !== "rejected" && r.patent.filing_date)
     .sort((a, b) => (CATEGORIES.indexOf(a.claim_category as any) - CATEGORIES.indexOf(b.claim_category as any))
       || (a.patent.filing_date ?? "").localeCompare(b.patent.filing_date ?? "")), [rows]);
 
@@ -74,6 +74,7 @@ export function Timeline({ rows, asOf, freeDate, width = 1100 }: { rows: Row[]; 
                 <text x={8} y={y + ROW_H / 2 + 4} fontSize="12" fill="var(--text-primary)">
                   <tspan fontWeight={500}>{p.patent_no ? `#${p.patent_no}` : p.application_no}</tspan>
                   <tspan fill="var(--text-muted)"> · {CATEGORY_SHORT[r.claim_category ?? ""] ?? "?"}</tspan>
+                  {r.review_state === "candidate" && <tspan> ⏳</tspan>}
                 </text>
                 {fill === "solid" && <rect {...common} fill={col} />}
                 {fill === "hatch" && <rect {...common} fill={`url(#hatch-${r.claim_category})`} stroke={col} strokeWidth={1.5} />}
@@ -97,6 +98,7 @@ export function Timeline({ rows, asOf, freeDate, width = 1100 }: { rows: Row[]; 
         <div style={{ marginTop: 6 }} className="small">
           <div>ประเภท: {CATEGORY_LABEL[hover.r.claim_category ?? ""] ?? "—"}</div>
           <div>สถานะ ณ วันที่เลือก: {STATUS_LABEL[hover.r.patent.status_as_of ?? ""] ?? "—"}</div>
+          {hover.r.review_state === "candidate" && <div>⏳ รอตรวจทาน — ยังไม่ยืนยันว่าเกี่ยวข้องกับยานี้</div>}
           <div>ยื่น {beDate(hover.r.patent.filing_date)} → สิ้นอายุ {beDate(hover.r.patent.expiry_date)}</div>
           {hover.r.design_around_note && <div className="muted">{hover.r.design_around_note}</div>}
         </div>
@@ -130,6 +132,7 @@ export function TimelineLegend() {
       <span className="item">{sw("hatch")}รอ/อยู่ระหว่างตรวจสอบ</span>
       <span className="item">{sw("faded")}สิ้นอายุ</span>
       <span className="item">{sw("outline")}ละทิ้ง / เพิกถอน / น่าจะถูกละทิ้ง</span>
+      <span className="item">⏳ รอตรวจทาน</span>
     </div>
   </div>;
 }
