@@ -16,13 +16,13 @@ function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">💊 Drug Patent Landscape · TH</div>
+        <div className="brand">💊 Drug Patent Landscape</div>
         <nav className="nav">
           <NavLink to="/drugs">ยา</NavLink>
           <NavLink to="/patents">สิทธิบัตร</NavLink>
           <NavLink to="/matching">การจับคู่</NavLink>
           <NavLink to="/review">ตรวจทาน</NavLink>
-          <NavLink to="/eval">Eval</NavLink>
+          <NavLink to="/eval">ประเมินผล</NavLink>
         </nav>
         <AsOfControls />
       </header>
