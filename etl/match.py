@@ -206,8 +206,8 @@ def run(use_llm: bool = True, substance: str | None = None):
                 if not mentions:
                     continue
                 strong = "title" in mentions or "claim1" in mentions
-                if not strong and not (p.ipc or "").upper().startswith(PHARMA_IPC):
-                    continue
+                if not strong and p.ipc and not p.ipc.upper().startswith(PHARMA_IPC):
+                    continue  # a passing mention in a known non-pharma patent (no IPC, e.g. from a PDF: keep)
                 link = s.exec(select(PatentLink).where(PatentLink.patent_id == p.id,
                                                        PatentLink.substance_id == sub.id)).first()
                 if link and link.review_state != ReviewState.CANDIDATE:

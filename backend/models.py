@@ -215,8 +215,11 @@ class Patent(SQLModel, table=True):
     status_norm: Optional[PatentStatus] = Field(
         default=None, sa_type=AutoString,
         description="status_raw mapped to a normalised status (PatentStatus, first six values) via "
-                    "seed/status_map.yaml or a status_map override. This is today's status; the status on a past "
-                    "date is computed by etl.normalize.status_as_of.")
+                    "seed/status_map.yaml or a status_map override. This is the status on status_date (today when "
+                    "that is null); the status on another date is computed by etl.normalize.status_as_of.")
+    status_date: Optional[date] = Field(
+        default=None, description="Date status_raw was observed: the report date ('ณ วันที่ …') for a patent loaded "
+                                  "from an อย. report (etl.load_pdf). Null = taken as today's status (DIP pages).")
     title: Optional[str] = Field(default=None, description="ชื่อที่แสดงถึงการประดิษฐ์: title, usually Thai (lblAppName).")
     main_claim: Optional[str] = Field(
         default=None, description="Claim 1 of the latest claim set, extracted from all_claims (max 3,000 chars).")

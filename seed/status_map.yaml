@@ -4,6 +4,8 @@
 rules:
   - contains: "เพิกถอน"            # revoked
     status: revoked
+  - contains: "จะสิ้นอายุ"          # "… will expire on <date>": still in force
+    status: granted_active
   - contains: "สิ้นอายุ"           # expired
     status: expired
   - contains: "ยกคำขอ"             # application rejected
@@ -14,14 +16,24 @@ rules:
     status: abandoned
   - contains: "ค่าธรรมเนียมรายปี"   # paying annual fees -> granted & in force
     status: granted_active
-  - contains: "ออกหนังสือสำคัญ"     # certificate issued
+  - contains: "หนังสือสำคัญ"        # certificate issued / sent
     status: granted_active
+  - contains: "ต่ออายุ"            # petty patent renewed
+    status: granted_active
+  - contains: "ก่อนรับจด"          # amendment "before registration": still under examination
+    status: pending_examining
+  - contains: "ก่อนการรับจด"
+    status: pending_examining
   - contains: "รับจดทะเบียน"        # registered
     status: granted_active
-  - contains: "ตรวจสอบการประดิษฐ์"   # substantive examination requested / in progress
+  - contains: "ตรวจสอบ"            # examination requested / in progress, foreign examination report filed
     status: pending_examining
-  - contains: "แก้ไขเพิ่มเติม"       # amendments during examination
+  - contains: "ตรวจค้น"            # search requested (part of examination)
     status: pending_examining
-  - contains: "ประกาศโฆษณา"         # published, examination not yet requested
+  - contains: "แก้ไข"              # amendments during examination
+    status: pending_examining
+  - contains: "จัดทำเอกสารตอบรับ"   # office paperwork during prosecution
+    status: pending_examining
+  - contains: "ประกาศ"             # published, examination not yet requested
     status: pending_unexamined
 default: pending_unexamined

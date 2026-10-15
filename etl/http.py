@@ -31,11 +31,12 @@ class PoliteClient:
             self._wait()
             try:
                 r = self.c.request(method, url, **kw)
-                if r.status_code >= 500:
+                if r.status_code >= 500 or r.status_code == 429:  # 429: rate limited (PubChem throttles bursts)
                     raise httpx.HTTPStatusError(f"{r.status_code}", request=r.request, response=r)
                 return r
             except (httpx.TransportError, httpx.HTTPStatusError) as e:
-                wait = 2 ** attempt * 2
+                after = getattr(getattr(e, "response", None), "headers", {}).get("Retry-After", "")
+                wait = int(after) if after.isdigit() else 2 ** attempt * 2
                 log.warning("%s %s failed (%s); retry in %ss", method, url, e, wait)
                 time.sleep(wait)
         raise RuntimeError(f"giving up on {method} {url}")

@@ -5,4 +5,5 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pyyaml>=6
 openpyxl>=3.1
+pymupdf>=1.24          # reads the อย. report PDFs (etl.pdf_report)
 pytest>=8

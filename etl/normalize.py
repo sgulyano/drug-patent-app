@@ -40,15 +40,18 @@ def compute_expiry(p: Patent) -> tuple[date | None, E | None]:
 
 
 def status_as_of(p: Patent, as_of: date) -> str:
-    """Best estimate of the patent's legal state on `as_of`, given today's recorded status.
+    """Best estimate of the patent's legal state on `as_of`, given its recorded status (observed on
+    p.status_date, or today when that is null).
 
     Returns a PatentStatus, including the as-of-only not_published and likely_abandoned.
     """
     if p.publication_date and p.publication_date > as_of:
         return S.NOT_PUBLISHED
+    norm = p.status_norm or S.PENDING_UNEXAMINED
+    if p.status_date and p.status_date <= as_of and norm in (S.ABANDONED, S.REVOKED, S.EXPIRED):
+        return norm  # already final when it was observed (an abandoned application never "expires")
     if p.expiry_date and p.expiry_date < as_of:
         return S.EXPIRED
-    norm = p.status_norm or S.PENDING_UNEXAMINED
     exam_deadline = add_years(p.publication_date, EXAM_REQUEST_YEARS) if p.publication_date else None
     granted_by_then = bool(p.grant_date and p.grant_date <= as_of)
     if norm == S.REVOKED:
@@ -73,7 +76,7 @@ def run():
         for p in s.exec(select(Patent)):
             p.status_norm = norm_status(p.status_raw, overrides)
             exp, src = compute_expiry(p)
-            if exp:
+            if exp and p.expiry_source != E.STATED:  # a date the source states wins over the computed one
                 p.expiry_date, p.expiry_source = exp, src
             if p.status_raw:
                 seen[p.status_raw] = p.status_norm

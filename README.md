@@ -5,12 +5,17 @@ applications relate to it, what kind of claim each one makes, and whether each o
 it judges whether a Thai manufacturer can make the generic now, only by avoiding certain patents, or only after a
 given date.
 
-The pipeline starts from nothing but the product names. It finds the active ingredients, discovers the related
-patents on the Thai Department of Intellectual Property (DIP) site, classifies each claim and computes a verdict.
-The results are checked against the รายงาน อย. on the 10 high-priority drugs in the target list
-(`รายงานข้อมูลสิทธิบัตรของรายการยาในบัญชียามุ่งเป้า…`, data as of 20 Jul 2022). That report serves as the ground
-truth, and the patent–substance links the pipeline finds on its own are scored against it (see
+The database is loaded from the two Thai FDA drug-patent reports in `data/pdf/`
+(`รายงานข้อมูลสิทธิบัตรของรายการยาที่อยู่ในบัญชียามุ่งเป้าที่มีลำดับความสำคัญสูง`): 40 products as of 2017–2019 and
+10 products as of 20 Jul 2022, with the 277 Thai patents and applications their tables list. The loader stores
+the drugs and the patents but **not** which product each patent was listed under, so the matcher has to link
+them itself: it finds each substance in the patent text, classifies the claim and computes a verdict. The
+reports' own grouping, claim types and conclusions are the ground truth the links are scored against (see
 [Evaluation](#evaluation-against-the-รายงาน-อย)).
+
+The original pipeline, which discovers patents on the Thai Department of Intellectual Property (DIP) site
+starting from nothing but product names, is still in `etl/` with its raw page cache in `data/raw/`. Its data
+is no longer in the database.
 
 The app has five pages:
 
@@ -32,11 +37,13 @@ All data comes from public sources.
 
 | source | used for | module |
 |---|---|---|
-| [PubChem PUG REST / PUG View](https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest) (NIH) | substance identity, structure, IUPAC name, formula, synonyms, ATC code, indication, mechanism | `pubchem`, `resolve_substances` |
-| [FDA Orange Book data files](https://www.fda.gov/drugs/drug-approvals-and-databases/orange-book-data-files) | US patents and exclusivities for the reference product, number of approved generics (ANDA) | `orange_book` |
+| รายงาน อย. (Thai FDA with DIP), `data/pdf/20210401083633.pdf` (40 products) and `202304201661685407.pdf` (10 products) | the drugs (name, dosage form, IUPAC name, formula, other names, indication) and the patents (numbers, dates, expiry, status, title, main claim, summary) | `pdf_report`, `load_pdf` |
+| [PubChem PUG REST / PUG View](https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest) (NIH), optional | synonyms and any field the report leaves empty (`--pubchem`) | `pubchem`, `resolve_substances` |
 | [Ollama Cloud](https://docs.ollama.com/cloud) (optional) | Thai transliteration suggestions and claim classification by an LLM | `llm` |
+| DIP site and [FDA Orange Book data files](https://www.fda.gov/drugs/drug-approvals-and-databases/orange-book-data-files) | the scraping pipeline only (not in the current database) | `crawl_category`, `search_by_name`, `scrape_detail`, `orange_book` |
 
-The รายงาน อย. itself is used only by the evaluation (`eval/golden/expected.yaml`), never by the pipeline.
+From the reports the matcher never sees which product a patent was listed under, the report's claim type or its
+conclusions: those are held out in `eval/golden/` and read only by the evaluation.
 
 ## Quick start
 
@@ -44,9 +51,10 @@ The รายงาน อย. itself is used only by the evaluation (`eval/gold
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt     # Windows; use .venv/bin on macOS/Linux
 .venv/Scripts/python -m pytest -q                                           # tests
 
-# 1. Build the data (first run ~1 h: crawls ~1,650 pharma patents at 1 request/s, then searches by drug name)
-.venv/Scripts/python -m etl.pipeline --as-of 2022-07-20
-#    later runs reuse cached pages:   --skip-crawl
+# 1. Build the data from the reports in data/pdf/ (~30 s; backs up data/app.db, then replaces its drugs/patents)
+.venv/Scripts/python -m etl.load_pdf --match --no-llm
+#    with the LLM (needs OLLAMA_API_KEY in .env): drop --no-llm;  add PubChem synonyms: --pubchem
+#    the scraping pipeline instead (~1 h first run): .venv/Scripts/python -m etl.pipeline --as-of 2022-07-20
 
 # 2. Run the app
 .venv/Scripts/uvicorn backend.app:app --port 8000
@@ -61,16 +69,16 @@ The database is SQLite (`data/app.db`). [backend/models.py](backend/models.py) i
 there has a description (what it means, where it comes from, its format, what null means), and a test fails if
 one is missing.
 
-| table | one row is | written by |
+| table | one row is | written by (`load_pdf`; scraping pipeline step) |
 |---|---|---|
-| `drug_product` | a product on the target list | step 1; the analyst fills in `th_generic_*` |
-| `substance` | an active ingredient: PubChem profile, Thai spellings, Orange Book note | steps 1, 3 and 5 |
-| `product_substance` | "this product contains this substance" | step 1 |
-| `patent` | a Thai patent or patent application | steps 2–4 |
-| `status_map` | a status text seen on the DIP site and the status it maps to | step 4 |
-| `patent_link` | "this patent claims something about this substance", with the claim category and how much it blocks a generic | step 6; then the analyst confirms or rejects it |
-| `external_patent_ref` | a US Orange Book patent for the substance | step 5 |
-| `assessment` | the verdict for one product on one as-of date | step 7; an analyst override adds a new row |
+| `drug_product` | a product in a report | `load_pdf` (step 1); the analyst fills in `th_generic_*` |
+| `substance` | an active ingredient: facts from the report heading (or PubChem), Thai spellings, Orange Book note | `load_pdf`, `name_variants` (steps 1, 3 and 5) |
+| `product_substance` | "this product contains this substance" | `load_pdf` (step 1) |
+| `patent` | a Thai patent or patent application | `load_pdf` (steps 2–4) |
+| `status_map` | a status text seen and the status it maps to | `normalize` (step 4) |
+| `patent_link` | "this patent claims something about this substance", with the claim category and how much it blocks a generic | `match` (step 6); then the analyst confirms or rejects it |
+| `external_patent_ref` | a US Orange Book patent for the substance | step 5 only (empty after `load_pdf`) |
+| `assessment` | the verdict for one product on one as-of date | `assess` (step 7); an analyst override adds a new row |
 
 ```mermaid
 ---
@@ -83,7 +91,7 @@ flowchart LR
     product_substance["<b>product_substance</b><br/>drug_product_id · PK, FK<br/>substance_id · PK, FK"]
     substance["<b>substance</b><br/>id · PK<br/>inn_name · UK<br/>salt_form<br/>query_name<br/>pubchem_cid<br/>parent_cid<br/>iupac_name<br/>molecular_formula<br/>molecular_weight<br/>smiles<br/>inchikey<br/>description<br/>indication<br/>mechanism<br/>atc_code<br/>name_variants_th<br/>synonyms_en<br/>peptide_sequence<br/>orange_book_note<br/>enriched_at"]
     patent_link["<b>patent_link</b><br/>id · PK<br/>patent_id · FK<br/>substance_id · FK<br/>drug_product_id · FK<br/>claim_category<br/>blocking_level<br/>design_around_note<br/>match_method<br/>matched_terms<br/>confidence<br/>evidence_snippet<br/>rationale<br/>review_state<br/>reviewed_at<br/>thai_patentability_flag"]
-    patent["<b>patent</b><br/>id · PK<br/>application_no · UK<br/>filing_date<br/>receive_date<br/>publication_no<br/>publication_date<br/>patent_no<br/>grant_date<br/>expiry_date<br/>expiry_source<br/>kind<br/>status_raw<br/>status_norm<br/>title<br/>main_claim<br/>all_claims<br/>summary<br/>applicant<br/>inventors<br/>ipc<br/>industry<br/>discovered_via<br/>source_url<br/>raw_html_path<br/>scraped_at"]
+    patent["<b>patent</b><br/>id · PK<br/>application_no · UK<br/>filing_date<br/>receive_date<br/>publication_no<br/>publication_date<br/>patent_no<br/>grant_date<br/>expiry_date<br/>expiry_source<br/>kind<br/>status_raw<br/>status_norm<br/>status_date<br/>title<br/>main_claim<br/>all_claims<br/>summary<br/>applicant<br/>inventors<br/>ipc<br/>industry<br/>discovered_via<br/>source_url<br/>raw_html_path<br/>scraped_at"]
     status_map["<b>status_map</b><br/>status_raw · PK<br/>status_norm"]
     assessment["<b>assessment</b><br/>id · PK<br/>drug_product_id · FK<br/>as_of_date<br/>mode<br/>verdict<br/>free_date<br/>fully_clear_date<br/>avoid_lists<br/>status_counts<br/>auto_summary_th<br/>analyst_override<br/>analyst_note<br/>created_at"]
     external_patent_ref["<b>external_patent_ref</b><br/>id · PK<br/>substance_id · FK<br/>jurisdiction<br/>patent_no<br/>claim_type<br/>use_code<br/>expiry<br/>product_desc<br/>applicant"]
@@ -109,8 +117,9 @@ can name one product.
 - A patent links to a **substance**, not a product, so a substance, salt or crystal-form patent applies to every
   product containing that substance. An analyst can narrow a link to one **drug product** (`drug_product_id`)
   when the claim only covers one dosage form, such as a device or a formulation.
-- `patent.status_norm` is the status **today**. The status on a past date (for example the report date) is
-  computed when needed and never stored.
+- `patent.status_norm` is the status on `patent.status_date`: the report date for a patent loaded from a
+  report, today for a DIP page (`status_date` null). The status on another date is computed when needed and never
+  stored; a final status (abandoned, revoked, expired) is trusted from its `status_date` on.
 - The verdict is recomputed live for any as-of date. `assessment` keeps the results of pipeline runs and the
   analyst overrides, which are added as new rows rather than replacing old ones.
 - Dates are stored in the Common Era (ISO). Screens and exports add a Buddhist Era (พ.ศ.) copy, in columns
@@ -140,7 +149,7 @@ readable. To change one, assign a new list or dict; editing it in place is not s
 |---|---|
 | `substance.synonyms_en` | `["Leuprorelin", "leuprolide", …]` |
 | `substance.name_variants_th` | `{"observed": [{"spelling", "docs", "source"}, …], "probes": [spellings still to try]}` |
-| `patent.discovered_via` | `["category:pharma", "title:<spelling>", "applicant:<name>"]` |
+| `patent.discovered_via` | `["pdf:<report file>"]`, or `["category:pharma", "title:<spelling>", "applicant:<name>"]` from the scraping pipeline |
 | `patent_link.matched_terms` | `{"terms": [names found], "sections": ["title", "claim1", "claims", "summary"]}` |
 | `assessment.avoid_lists` | `{"blocking": [rows], "avoid": [rows], "warnings": [rows]}`, one row per patent |
 | `assessment.status_counts` | `{"expired": 1, "granted_active": 1}` |
@@ -154,11 +163,32 @@ database built before the October 2026 refactor is upgraded on its first start:
 - `orange_book_note` moves from `drug_product` to `substance`;
 - `assessment.avoid_json` and `counts_json` are renamed `avoid_lists` and `status_counts`.
 
+## Loading the อย. reports
+
+`python -m etl.load_pdf --match` builds the current database
+([etl/pdf_report.py](etl/pdf_report.py), [etl/load_pdf.py](etl/load_pdf.py)):
+
+1. **Parse** each PDF. The contents page gives the products and their page ranges. Each patent table is read
+   geometrically: its vertical rules are the column borders, every character goes to the column its centre falls
+   in, and a row starts where the first column holds a row number, so rows that run over a page break are joined.
+   The font drops the nikhahit of sara am ("ส าหรับ"), which is restored.
+2. **Back up** `data/app.db` to `app.db.pre-pdf-<date-time>` (a new file every run) and empty the drug, patent, link and assessment tables.
+3. **Load** the 50 products (substances split from the name: `Dutasteride + Tamsulosin Capsule …` gives two)
+   with the facts under each heading, and the 277 distinct applications as one pool, in application-number
+   order. An application listed under several products is stored once, with the most recent report's status.
+   Dates that are impossible for the report (before 1979 or after the report date) are dropped as typos.
+4. **Match**: `normalize`, then `name_variants` learns the Thai spellings the loaded text actually uses, then
+   `match` and `assess` run unchanged.
+
+The report's claim-type column, its conclusions and the product a row was listed under are not stored.
+`--pubchem` adds PubChem synonyms (`leuprolide`, `(S)-omeprazole`, …), which the reports don't print.
+
 ## Pipeline
 
-`python -m etl.pipeline` runs seven steps ([etl/pipeline.py](etl/pipeline.py)). The only drug input is
-`seed/drugs.yaml`, which holds the 10 product names. Every step reads what earlier steps stored in the database,
-so each one can also be run on its own (`python -m etl.<module>`).
+The scraping pipeline is kept for rebuilding from the DIP site. `python -m etl.pipeline` runs seven steps
+([etl/pipeline.py](etl/pipeline.py)). The only drug input is `seed/drugs.yaml`, which holds the 10 product names.
+Every step reads what earlier steps stored in the database, so each one can also be run on its own
+(`python -m etl.<module>`).
 
 ```mermaid
 flowchart TD
@@ -207,8 +237,9 @@ longer-lived patents and all pending or abandoned applications are found through
 ### Example: one product through the pipeline
 
 This follows **Leuprorelin powder and solvent for prolonged-release suspension for injection** from its seed
-line to its verdict as of 20 Jul 2022, in `confirmed` mode. The `id` values are the real row ids, so you can see
-how the rows join. Rows are trimmed to the fields that matter.
+line to its verdict as of 20 Jul 2022, in `confirmed` mode. The `id` values are the row ids of the scraping
+pipeline's database (backed up in `data/app.db.pre-pdf-*`), so you can see how the rows join. Rows are trimmed to
+the fields that matter.
 
 **Step 1. The product and its substance.** The seed line is just the name:
 
@@ -342,54 +373,82 @@ Every table page in the app has an **Export CSV** button that respects the curre
 
 ## Evaluation against the รายงาน อย.
 
-The รายงาน อย. is the ground truth. Its patents, claim types, statuses, expiry dates and per-drug conclusions
-are transcribed into `eval/golden/expected.yaml`, and `eval/score.py` compares them with the patent–substance
-links the pipeline found automatically. Links an analyst added or decided by hand are left out, so the score
+The two reports are the ground truth. The database holds all their patents as **one pool** and all their
+products, with nothing saying which patent belongs to which product. `eval/score.py` checks how well the matcher
+puts them back together, scoring each product as of its own report date (2017–2019 for the 40-product report,
+20 Jul 2022 for the 10-product one). Links an analyst added or decided by hand are left out, so the score
 measures the pipeline rather than the analyst.
 
-The evaluation is blind: the pipeline never sees the answers. Only `eval/score.py` reads the answer key, and
-`tests/test_no_leak.py` fails the build if any pipeline code imports `eval`, references the answer key, or
-contains any of its application or patent numbers.
+The answer key `eval/golden/expected.yaml` is generated from the PDFs by `python -m eval.build_key`, with the same
+parser the loader uses: for every product, the applications its table lists, with their claim type and status
+as printed. On the 2023 report it matches the earlier hand transcription exactly, except one filing date the PDF
+misprints. The per-product conclusions (verdict class and the patents to avoid) are in
+`eval/golden/verdicts.yaml`, curated by hand from each section's "สรุป" paragraph. A new product gets a rule-made
+draft (`--draft`) that must be checked against the PDF.
+
+The evaluation is blind: only `eval/` reads the answer key, and `tests/test_no_leak.py` fails the build if any
+pipeline code imports `eval`, references the answer key, or contains any of its application or patent numbers.
+A unit test checks that a loaded patent record carries no product and no claim type.
 
 ```bash
-.venv/Scripts/python -m eval.score                         # score the current DB (automated links only)
-.venv/Scripts/python -m eval.score --fresh --skip-crawl    # rebuild a fresh DB from the seed, then score
+.venv/Scripts/python -m eval.score                      # score the current DB (automated links only)
+.venv/Scripts/python -m eval.score --fresh --no-llm     # load the PDFs into a fresh DB, match with rules, score
+.venv/Scripts/python -m eval.score --fresh              # … with the LLM (needs OLLAMA_API_KEY)
+.venv/Scripts/python -m eval.score --fresh --pubchem    # … giving the matcher PubChem synonyms too
+.venv/Scripts/python -m eval.build_key                  # regenerate the answer key after a parser change
 ```
 
 | metric | meaning |
 |---|---|
-| discovery recall / precision | share of the report's patents the pipeline found / share of the pipeline's links that the report lists |
-| claim-category accuracy | for patents found by both, the pipeline's claim category matches the report's type |
-| status / expiry accuracy | status as of the report date matches; expiry date within one day |
-| verdict accuracy | the per-drug conclusion (free / free with avoidance / blocked) matches |
-| avoid-list recall / precision | the patents the report says to avoid vs those the pipeline marks avoidable or blocking |
+| discovery recall / precision | share of the patents a product's section lists that the matcher linked to that product / share of the matcher's links that the section lists |
+| claim-category accuracy | for linked patents the section lists, the matcher's claim category fits the report's type |
+| status / expiry accuracy | status on the report date matches; expiry within one day. Both come from the report itself, so these only check the status mapping and the parser |
+| verdict accuracy | the per-product conclusion (free / free with avoidance / blocked) matches |
+| avoid-list recall / precision | the patents the conclusion says to avoid vs those the matcher marks avoidable or blocking |
 
-Every disagreement counts as a pipeline error. Results go to `eval/report.md`, `eval/report.csv` and the app's
-**ประเมินผล** page, which lists each disagreement with the pipeline's and the report's values side by side and
-flags regressions against the previous run.
+Every disagreement counts as an error. Results go to `eval/report.md`, `eval/report.csv` and the app's
+**ประเมินผล** page, which shows the totals per report, lists each disagreement side by side and flags
+regressions against the previous run with the same settings.
 
-### Current score (as of 20 Jul 2022, rules only, no LLM)
+### Current score (15 Oct 2026, report data only)
 
-| metric | value |
-|---|---|
-| verdict matches the รายงาน อย. | 9/10 |
-| avoid-list recall / precision | 78% / 88% |
-| claim-category accuracy (matched patents) | 96% |
-| expiry-date accuracy | 92% |
-| status accuracy | 76% |
-| discovery recall / precision | 53% / 81% |
+| metric | rules only | rules + LLM |
+|---|---|---|
+| link recall (all / 2019 report / 2023 report) | 27% / 23% / 53% | 34% / 31% / 53% |
+| link precision | 100% | 98% |
+| claim-category accuracy (linked patents) | 93% | 91% |
+| verdict matches the รายงาน อย. | 33/50 | 32/50 |
+| avoid-list recall / precision | 41% / 64% | 47% / 51% |
+| status / expiry accuracy | 96% / 100% | 98% / 100% |
 
-The one verdict miss (lercanidipine) is data drift. The amorphous-HCl patent is "แจ้งเพิกถอน (ไม่ชำระค่าธรรมเนียม)"
-today, and the public site gives no date for the revocation, so the pipeline cannot know it was still in force in
-2022. Most missed patents are not in the corpus at all (see below).
+The matcher almost never links a patent to the wrong product, but it misses most of the 309 listed
+applications. The misses are not loading errors: the PDF text is intact. The patents name the drug in a way the
+matcher doesn't look for:
+
+- **another name or form**: `S-โอมีพราโซล` for esomeprazole, `ลิวโพรไลด์` (leuprolide) for leuprorelin,
+  `O-เดสเมทิลเวนลาฟาซีน` for desvenlafaxine. The reports print no synonyms, so these need PubChem (`--pubchem`)
+  or the LLM. The 40-product report's own heading misspells bevacizumab as "Bevazicumab";
+- **a formula or a code**: Markush claims ("สูตรเคมี I"), and many abandoned applications whose claim excerpt in
+  the report never names the drug;
+- **a class**: "สารยับยั้งการดึงโปรตอน" (proton-pump inhibitor), "ไตรอาโซล" antifungals;
+- **a Thai spelling the phonetic matcher didn't learn**: `โดนเพซิล` for donepezil.
+
+Most verdict misses follow from those: the blocking substance patents of varenicline, etravirine, azilsartan and
+empagliflozin are never linked. Four go the other way: the matcher links at substance level, but the report
+judges some formulation patents irrelevant to the product's dosage form (for example tamsulosin OD/SR tablets
+for the dutasteride + tamsulosin capsule).
+
+The LLM run got 56 malformed JSON replies to claim classification; those links fall back to the rules.
 
 ## Known limits
 
-- Discovery recall is limited by coverage. Patents whose titles don't name the drug are reached only through the
-  pharma-category crawl or applicant expansion. Next step: crawl the whole publication listing month by month
-  (title + applicant, about 1–2 h at 1 request/s) and match titles and applicants phonetically.
-- Discovery uses names, synonyms (PubChem), parenthetical "Thai (english)" pairs, and amino-acid sequences for
-  peptide drugs. A Markush genus claim that never names the compound can't be linked by text.
+- Matching uses names, synonyms (from the report, or PubChem with `--pubchem`), parenthetical "Thai (english)"
+  pairs, and amino-acid sequences for peptide drugs. A Markush genus claim or a drug class that never names the
+  compound can't be linked by text, and the reports only print an excerpt of the claims.
+- Links are per substance, so a formulation patent applies to every product with that substance; the report
+  sometimes judges it irrelevant to one dosage form. An analyst can narrow a link to one product.
+- With the scraping pipeline, discovery is also limited by coverage: patents whose titles don't name the drug are
+  reached only through the pharma-category crawl or applicant expansion.
 - The DIP site shows no legal-event history, so the date an application was abandoned or revoked is unknown.
   Point-in-time status uses the 5-year examination-request window.
 - The Orange Book data is current, not historical.
