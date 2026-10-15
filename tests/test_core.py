@@ -107,3 +107,129 @@ def test_peptide_sequence_matching():
     assert peptide.mentions("5-oxo-Pro-His-Trp-Ser-Tyr-DLeu-Leu-Arg-Pro-NH-C2H5", seq)
     assert not peptide.mentions("pGlu-His-Trp-Ser-Tyr-D-Trp-Leu-Arg-Pro-Gly-NH2", seq)  # different analogue
     assert not peptide.mentions("Tyr-Y-Leu-Arg-Pro-Z", seq)
+
+
+def test_every_field_is_described():
+    from sqlmodel import SQLModel
+    for table in SQLModel.metadata.sorted_tables:
+        model = next(m for m in SQLModel.__subclasses__() if getattr(m, "__tablename__", None) == table.name)
+        assert (model.__doc__ or "").strip(), f"{model.__name__} has no docstring"
+        missing = [n for n, f in model.model_fields.items() if not (f.description or "").strip()]
+        assert not missing, f"{model.__name__} fields without a description: {missing}"
+
+
+def test_migration_from_old_schema(tmp_path):
+    """An app.db from before the model refactor keeps its data: renamed and dropped columns, the Orange Book note
+    moved to the substance, JSON text read back as lists/dicts."""
+    import sqlite3
+    from sqlmodel import Session, select
+    from backend.db import init_db
+    from backend.models import Assessment
+
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript("""
+        CREATE TABLE drug_product (id INTEGER PRIMARY KEY, name VARCHAR UNIQUE, dosage_form VARCHAR, route VARCHAR,
+            strengths VARCHAR, on_target_list BOOLEAN, th_generic_registered BOOLEAN, th_generic_note VARCHAR,
+            orange_book_note VARCHAR);
+        CREATE TABLE substance (id INTEGER PRIMARY KEY, inn_name VARCHAR UNIQUE, structure_img_url VARCHAR,
+            synonyms_en VARCHAR, name_variants_th VARCHAR);
+        CREATE TABLE product_substance (drug_product_id INTEGER, substance_id INTEGER,
+            PRIMARY KEY (drug_product_id, substance_id));
+        CREATE TABLE external_patent_ref (id INTEGER PRIMARY KEY, substance_id INTEGER, jurisdiction VARCHAR,
+            patent_no VARCHAR, found_in_th BOOLEAN);
+        CREATE TABLE assessment (id INTEGER PRIMARY KEY, drug_product_id INTEGER, as_of_date DATE, mode VARCHAR,
+            verdict VARCHAR, avoid_json VARCHAR, counts_json VARCHAR, created_at DATETIME);
+        CREATE VIEW v_drugs AS SELECT dp.orange_book_note, s.structure_img_url FROM drug_product dp, substance s;
+        INSERT INTO drug_product (id, name, route, orange_book_note) VALUES (1, 'X tablet', 'oral', 'OB note');
+        INSERT INTO substance (id, inn_name, structure_img_url, synonyms_en, name_variants_th)
+            VALUES (1, 'x', 'http://img', '["X-1", "Xeno"]', '{"observed": [{"spelling": "เอ็กซ์", "docs": 1}]}');
+        INSERT INTO product_substance VALUES (1, 1);
+        INSERT INTO assessment (id, drug_product_id, as_of_date, mode, verdict, avoid_json, counts_json, created_at)
+            VALUES (1, 1, '2022-07-20', 'auto', 'free', '{"avoid": []}', '{"expired": 2}', '2022-07-20 00:00:00');
+    """)
+    con.close()
+
+    engine = init_db(path)
+    init_db(path)  # second run is a no-op
+    con = sqlite3.connect(path)
+    cols = lambda t: {r[1] for r in con.execute(f"PRAGMA table_info({t})")}  # noqa: E731
+    assert not cols("drug_product") & {"route", "strengths", "on_target_list", "orange_book_note"}
+    assert "structure_img_url" not in cols("substance") and "found_in_th" not in cols("external_patent_ref")
+    assert {"avoid_lists", "status_counts"} <= cols("assessment")
+    assert not cols("assessment") & {"avoid_json", "counts_json"}
+    con.close()
+    with Session(engine) as s:
+        sub = s.get(Substance, 1)
+        assert sub.orange_book_note == "OB note"
+        assert sub.synonyms_en == ["X-1", "Xeno"] and sub.name_variants_th["observed"][0]["spelling"] == "เอ็กซ์"
+        a = s.exec(select(Assessment)).one()
+        assert a.avoid_lists == {"avoid": []} and a.status_counts == {"expired": 2}
+    engine.dispose()
+    assert list(tmp_path.glob("old.db.pre-migration-*"))
+
+
+def test_status_map_pdf_vocabulary():
+    # an amendment filed *before* registration is still under examination, not granted
+    assert norm_status("ยื่นคำขอแก้ไขเพิ่มเติมก่อนรับจดทะเบียนเข้ามาเอง 02/06/2558") == "pending_examining"
+    assert norm_status("ยื่นคำขอแก้ไขเพิ่มเติมก่อนการรับจดทะเบียนเข้ามาเอง") == "pending_examining"
+    assert norm_status("ยื่นชำระค่าธรรมเนียมรายปีจะสิ้นอายุสิทธิบัตร 05/06/2561") == "granted_active"
+    assert norm_status("แจ้งนำส่งหนังสือสำคัญ 10/11/2559") == "granted_active"
+    assert norm_status("ยื่นเอกสารสิทธิบัตรและรายงานการตรวจสอบที่ได้รับจากต่างประเทศ") == "pending_examining"
+    assert norm_status("ประกาศโฆษณา 09/01/2549 *น่าจะละทิ้งแล้ว") == "abandoned"
+
+
+def test_status_observed_on_a_date_is_trusted_from_then_on():
+    q = Patent(application_no="y", filing_date=date(2010, 1, 1), publication_date=date(2016, 1, 1),
+               status_norm="abandoned", status_date=date(2019, 7, 15))
+    assert status_as_of(q, date(2019, 7, 15)) == "abandoned"  # the report saw it abandoned on its date
+    assert status_as_of(q, date(2018, 1, 1)) == "pending_unexamined"  # before that: exam window still open
+    q.expiry_date = date(2029, 12, 31)
+    assert status_as_of(q, date(2031, 1, 1)) == "abandoned"  # it was never granted, so it doesn't "expire"
+    q.status_date = None
+    assert status_as_of(q, date(2019, 7, 15)) == "pending_unexamined"  # unknown date: old behaviour
+
+
+def _row(**cells):
+    from etl.pdf_report import Row
+    return Row(no=1, page=1, cells=cells)
+
+
+def test_pdf_row_fields():
+    from etl import pdf_report as R
+    r = _row(application="990100123 4/ 18/12/ 2542", publication="12345 07/11/2546", patent="-",
+             expiry="28//06/2580", type_status="Drug substance claims (polymorph) / สถาน : สิ้น อายุสิทธิบัตร")
+    assert R.application(r) == ("9901001234", date(1999, 12, 18))
+    assert R.publication(r) == ("12345", date(2003, 11, 7))
+    assert R.patent(r) == (None, None)
+    assert R.expiry(r) == date(2037, 6, 28)
+    assert R.claim_type(r) == "Drug substance claims (polymorph)"
+    assert R.status_text(r) == "สิ้นอายุสิทธิบัตร"
+    unlabelled = _row(type_status="Product claim/ ยื่นคำขอแก้ไขเพิ่มเติม 2 มิ.ย.58")
+    assert R.claim_type(unlabelled) == "Product claim" and R.status_text(unlabelled).startswith("ยื่นคำขอแก้ไข")
+    assert R.fix_thai("ส าหรับ น้ า") == "สำหรับ น้ำ"
+
+
+def test_pdf_product_and_substance_header():
+    from etl import pdf_report as R
+    assert R.split_product("Abcxine + Defzole Capsule 0.5 mg + 0.4 mg") == (["Abcxine", "Defzole"], "Capsule 0.5 mg + 0.4 mg")
+    assert R.split_product("Abcxine Sodium Enteric-coated Tablet 20 mg") == (["Abcxine Sodium"], "Enteric-coated Tablet 20 mg")
+    sec = R.Section(product="Abcxine Tablet 5 mg", first_page=1, last_page=1, text=[
+        "1. Abcxine Tablet 5 mg", "Abcxine : 2-[4-(2-hydroxyethyl)phenyl]-2-methylpropanoic acid", ": C 12 H 16 O 3",
+        ": Abcmycin; Xyz-1", "Indication : pain", "ผลการตรวจสอบข้อมูลสิทธิบัตรยา Abcxine Tablet 5 mg ณ วันที่ 20 มิถุนายน 2560"])
+    f = R.substance_facts(sec, "Abcxine")
+    assert f["molecular_formula"] == "C12H16O3" and f["iupac_name"].startswith("2-[4-")
+    assert f["synonyms"] == ["Abcmycin", "Xyz-1"] and f["indication"] == "pain"
+    assert R.report_date(sec) == date(2017, 6, 20)
+
+
+def test_pdf_loader_keeps_no_trace_of_the_product_section():
+    """A patent record holds patent fields only: not the product it was listed under, nor the report's claim type."""
+    from etl.load_pdf import patent_record
+    rec = patent_record(_row(application="9901001234/ 18/12/2542", publication="12345/ 07/11/2546",
+                             type_status="Process Claim/ สถานะ: ละทิ้งคำขอรับสิทธิบัตรหลังประกาศโฆษณา",
+                             title="กรรมวิธี", main_claim="1. กรรมวิธี 2. ตามข้อ 1"), date(2019, 7, 15), "pdf:x.pdf")
+    assert set(rec) <= set(Patent.model_fields)
+    assert rec["discovered_via"] == ["pdf:x.pdf"] and rec["status_norm"] == "abandoned"
+    assert "process" not in " ".join(str(v) for v in rec.values()).lower()  # the claim type is the matcher's job
+    assert rec["main_claim"] == "1. กรรมวิธี"

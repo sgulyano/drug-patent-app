@@ -3,7 +3,6 @@ PubChem and store chemistry data.
 
     python -m etl.resolve_substances
 """
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -15,7 +14,7 @@ from sqlmodel import select
 from backend.db import init_db, session
 from backend.models import DrugProduct, ProductSubstance, Substance
 from etl.peptide import find_sequence
-from etl.pubchem import IMG, PubChem, clean_synonyms
+from etl.pubchem import PubChem, clean_synonyms
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
@@ -72,11 +71,10 @@ def enrich(sub: Substance, pc: PubChem):
     for k, v in props.items():
         setattr(sub, k, v)
     sub.pubchem_cid, sub.parent_cid = cid, parent
-    sub.structure_img_url = IMG.format(cid=cid)
     raw_syns = pc.synonyms(parent)
     sub.peptide_sequence = find_sequence(raw_syns)
     syns = clean_synonyms(raw_syns) + clean_synonyms(pc.synonyms(cid), 10)
-    sub.synonyms_en = json.dumps(list(dict.fromkeys(syns)), ensure_ascii=False)
+    sub.synonyms_en = list(dict.fromkeys(syns))
     sub.description = pc.description(parent) or pc.description(cid)
     ind = pc.view_heading(parent, "Drug Indication", 2)
     sub.indication = "\n".join(ind) or None

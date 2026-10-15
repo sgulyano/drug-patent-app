@@ -124,9 +124,7 @@ def upsert_patent(s, parsed: dict, raw_path: Path, via: str | None = None, indus
     p.raw_html_path = str(raw_path)
     p.scraped_at = datetime.now(timezone.utc)
     if via:
-        vias = set(json.loads(p.discovered_via or "[]"))
-        vias.add(via)
-        p.discovered_via = json.dumps(sorted(vias), ensure_ascii=False)
+        p.discovered_via = sorted({*(p.discovered_via or []), via})  # reassign: JSON isn't mutation-tracked
     if industry and not p.industry:
         p.industry = industry
     s.add(p)

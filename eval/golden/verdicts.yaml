@@ -1,0 +1,363 @@
+# Per-product conclusions of the อย. reports, curated by hand from each section's "สรุป" paragraph (and chapter 2).
+# eval/build_key.py merges these into expected.yaml. Fields: class (free / free_with_avoidance / blocked_until),
+# avoid (application numbers the conclusion says to avoid; patent numbers mapped to their applications),
+# avoid_optional (alive in the text but left out of / garbled in the conclusion), suspect (appno -> why the PDF itself
+# looks inconsistent there), note (curator's remark), conclusion (the paragraph, for reference).
+Tiotropium bromide cap for inhaler/solution for inhalaion:
+  class: free_with_avoidance
+  avoid:
+  - 0301000969
+  - 0901004442
+  - '1401004558'
+  - '0301001354'
+  - '1701006798'
+  - '0301001312'
+  - '1901008171'
+  avoid_optional:
+  - '1801002829'
+  - '1801002830'
+  suspect:
+    '9701005202': printed as Process Claim but claim 1 is an aqueous formulation
+    0201002292: anhydrous crystal form printed as Product Claim
+    0301000969: micronised crystal form; conclusion calls it Drug Substance
+    '0301001312': printed expiry 29/12/2567 is not filing+20y (would be 07/04/2566)
+    '1701006798': printed expiry '16/0/2579' is garbled
+  source: transcribed by hand from the 2023 report (previous answer key)
+Micafungin injection:
+  class: free
+  avoid: []
+  source: transcribed by hand from the 2023 report (previous answer key)
+Leuprorelin powder and solvent for prolonged-release suspension for injection:
+  class: free_with_avoidance
+  avoid:
+  - '0701006463'
+  suspect:
+    '0201002351': conclusion prints the patent number as 64789
+  source: transcribed by hand from the 2023 report (previous answer key)
+Edoxaban Tablet:
+  class: free
+  avoid: []
+  suspect:
+    '1401003231': PDF infers abandonment from no examination request within 5 years
+  source: transcribed by hand from the 2023 report (previous answer key)
+Mycophenolate gastro-resistant tablet:
+  class: free
+  avoid: []
+  source: transcribed by hand from the 2023 report (previous answer key)
+Desvenlafaxine prolonged-release tablet:
+  class: free
+  avoid: []
+  source: transcribed by hand from the 2023 report (previous answer key)
+Bilastine Tablet:
+  class: free
+  avoid: []
+  source: transcribed by hand from the 2023 report (previous answer key)
+Lercanidipine Hydrochloride Tablet:
+  class: free_with_avoidance
+  avoid:
+  - 0601000800
+  avoid_optional:
+  - '1301003104'
+  suspect:
+    0601000801: filing year printed as 2449
+  source: transcribed by hand from the 2023 report (previous answer key)
+Febuxostat Tablet:
+  class: free
+  avoid: []
+  suspect:
+    '9901004674': claims a crystal form (polymorph) produced by the process
+  source: transcribed by hand from the 2023 report (previous answer key)
+Entacapone Tablet:
+  class: free
+  avoid: []
+  source: transcribed by hand from the 2023 report (previous answer key)
+Bosentan Tablet 62.5 mg, 125 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Bosentan Tablet 62.5 mg และ 125 mg จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Tamsulosin Orodispersible Tablet 0.2 mg, Sustained release Tablet 0.4 mg:
+  class: free_with_avoidance
+  avoid:
+  - 0401000080
+  - 0301000218
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Tamsulosin orodispersible tablet 0.2 mg, sustained release tablet
+    0.4 mg จำหน่ายได้โดยหลีกเลี่ยงสูตรตำรับและกรรมวิธีตามคำขอรับสิทธิบัตรเลขที่ 0401000080 และคำขอรับสิทธิบัตรเลขที่ 0301000218
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Voriconazole Tablet 50 mg, 200 mg, Oral suspension 40 mg/ml, Injection 200 mg/vial:
+  class: free_with_avoidance
+  avoid:
+  - '9801002115'
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Voriconazole จำหน่ายได้ทั้งในรูปแบบยาน้ำแขวนตะกอนยาฉีดและยาเม็ดสำหรับ
+    Voriconazole ในรูปแบบยาฉีดหากจะจำหน่ายก่อนวันที่ 05/06/2561 ต้องหลีกเลี่ยงสูตรตามสิทธิบัตรเลขที่ 32609
+  note: only the injection must avoid patent 32609, until 05/06/2561
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Donepezil Orodispersible Tablet (Disintegrating Tablet) 5 mg, 10 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Donepezil Orodispersible Tablet (Disintegrating Tablet)
+    5 mg และ 10 mg จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Rivastigmine Transdermal Therapeutic System 4.6 mg/แผ่น, 9.5 mg/แผ่น:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Rivastigmine ในรูปแบบ Transdermal extended release patch
+    (4.6 mg/24 hr. และ 9.5 mg/24 hr.) จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Celecoxib Capsule 200 mg, 400 mg:
+  class: free_with_avoidance
+  avoid:
+  - '9901004455'
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Celecoxib Capsule 50 mg, 100 mg, 200 mg, 400 mg จำหน่ายได้โดยหลีกเลี่ยงสูตรตำรับตามสิทธิบัตรเลขที่
+    17791 ซึ่งจะสิ้นอายุการคุ้มครอง 29/12/2562
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Abiraterone Tablet 250 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Abiraterone Tablet 250 mg จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Rabeprazole Enteric-coated Tablet 10 mg, 20 mg:
+  class: free_with_avoidance
+  avoid:
+  - '0501001234'
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Rabeprazole Enteric-coated Tablet 10 mg, 20 mg จำหน่ายได้โดยหลีกเลี่ยงสูตรตำรับและกรรมวิธีการผลิตตามคำขอรับสิทธิบัตรเลขที่
+    0501001234
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Entecavir Tablet 0.5 mg, 1 mg:
+  class: free_with_avoidance
+  avoid:
+  - '0101000662'
+  - 0201003738
+  - 0401001558
+  - '1101000915'
+  - '1201001649'
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Entecavir Tablet 0.5 mg, 1 mg จำหน่ายได้โดยหลีกเลี่ยงสูตรตำรับตามสิทธิบัตรเลขที่
+    44465 ซึ่งจะสิ้นอายุ 26/02/2564 และคำขอรับสิทธิบัตรเลขที่ 0201003738 และให้หลีกเลี่ยงการใช้สารสำคัญ Entecavir ที่มีกรรมวิธีการผลิตตามคำขอรับสิทธิบัตรเลขที่
+    0401001558 คำขอรับสิทธิบัตรเลขที่ 1101000915 และคำขอรับสิทธิบัตรเลขที่ 1201001649
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Etoricoxib Tablet 30 mg, 60 mg, 90 mg, 120 mg:
+  class: free_with_avoidance
+  avoid:
+  - 0101001927
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Etoricoxib Tablet 30 mg, 60 mg, 90 mg, 120 mg และให้หลีกเลี่ยงการใช้
+    Polymorph V ของ Etoricoxib ตามคำขอรับสิทธิบัตรเลขที่ 0101001927
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Darunavir Tablet 300 mg, 400 mg, 600 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Darunavir Tablet 75 mg, 150 mg, 400 mg, 600 mg, 800 mg
+    จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Dolutegravir Tablet 50 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Dolutegravir Tablet 50 mg จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Dutasteride + Tamsulosin Capsule 0.5 mg + 0.4 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Dutasteride + Tamsulosin Capsule จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Ertapenem Sterile powder 1 g/vial:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Ertapenem Sterile powder จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Bevazicumab Sterile solution 100 mg/4ml:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยา biosimilar ของ Bevacizumab จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Erlotinib Tablet 100 mg, 150 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Erlotinib Tablet จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Omalizumab Sterile powder 150 mg/vial:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยา biosimilar Omalizumab Sterile powder จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Etanercept Sterile solution 25mg/0.5ml, 50mg/1ml, Sterile powder 25 mg/vial:
+  class: free_with_avoidance
+  avoid:
+  - '1301006888'
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยา biosimilar Etanercept Sterile solution, Sterile powder จำหน่ายได้โดยหลีกเลี่ยงสูตรตามคำขอรับสิทธิบัตรเลขที่
+    1301006888
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Deferasirox Tablet 250 mg:
+  class: free_with_avoidance
+  avoid:
+  - 0301003851
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ  Deferasirox Tablet จำหน่ายได้โดยหลีกเลี่ยงสูตรตามคำขอรับสิทธิบัตรเลขที่
+    0301003851 ซึ่งจะสิ้นอายุ 13/10/2566
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Ranibizumab Sterile solution 10 mg/ml:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยา Ranibizumab sterile solution จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Pantoprazole Sodium Enteric-coated Tablet 20 mg, 40 mg:
+  class: free_with_avoidance
+  avoid:
+  - '0101004475'
+  - '0501001234'
+  - '1501006970'
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Pantoprazole จำหน่ายได้ในรูปแบบยาฉีดโดยหลีกเลี่ยงกรรมวิธีการผลิตตามสิทธิบัตรเลขที่
+    35890 (ปัจจุบันมียาชื่อสามัญในรูปแบบยาฉีดได้รับอนุมัติทะเบียนแล้วและมีจำหน่ายแล้ว ) และสามารถผลิตยาในรูปแบบ Delayed release
+    tablet (Pantoprazole EC Tablet 20 mg และ 40 mg) ได้โดยหลีกเลี่ยงสูตรตำรับตามคำขอรับสิทธิบัตรเลขที่ 0501001234 และคำขอรับสิทธิบัตรเลขที่
+    1501006970
+  note: patent 35890 (0101004475) is the injection's process patent; the rest are for the EC tablet
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Esomeprazole Tablet 20 mg, 40 mg:
+  class: free_with_avoidance
+  avoid:
+  - '0501001234'
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Esomeprazole Tablet 20 mg, 40 mg ได้โดยต้องหลีกเลี่ยงสูตรตำรับตามคำขอรับสิทธิบัตรเลขที่
+    0501001234 ซึ่งจะสิ้นอายุ 21/03/2568
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Lansoprazole Disintegrating Tablet 15 mg, 30 mg:
+  class: free_with_avoidance
+  avoid:
+  - 0901001042
+  - '1301003606'
+  - '1301002920'
+  - '1501006970'
+  conclusion: สรุปในประเทศไทยมีคำขอรับสิทธิบัตรสูตรตำรับยาเม็ดที่แตกตัวได้ในปากหลายคำขอดังนั้นหากบริษัทยาชื่อสามัญจะผลิตยาชื่อสามัญ
+    Lansoprazole  DT 15 mg, 30 mg จำหน่ายจะต้องหลีกเลี่ยงสูตรตามคำขอรับสิทธิบัตรเลขที่  0901001042 ซึ่งจะสิ้นอายุ 10/03/2562  คำขอรับสิทธิบัตรเลขที่  1301003606
+    ซึ่งจะสิ้นอายุ 26/12/2574 คำขอรับสิทธิบัตรเลขที่ 1301002920 ซึ่งจะสิ้นอายุ 02/12/2574 และคำขอรับสิทธิบัตรเลขที่ 1501006970
+    ซึ่งจะสิ้นอายุ 20/11/2577
+  suspect:
+    '0501001234': expiry printed 21/03/2468 (2568 elsewhere)
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Iloprost Inhaler 10 mcg/ml, Injection 20 mcg/ml:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Iloprost 20 mcg/ml infusion และ Iloprost 10 mcg/ml inhalation solution
+    จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Bupropion Sustained release Tablet 150 mg, 300 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญสามารถผลิตยาชื่อสามัญ Bupropion SR Tablet 150 mg, 300 mg  จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Varenicline Tablet 0.5 mg, 1 mg:
+  class: blocked_until
+  avoid:
+  - 0201001590
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญยังไม่สามารถผลิตยาชื่อสามัญ Varenicline tablet 0.5 mg, 1 mg จำหน่ายได้จนกว่าจะสิ้นอายุสิทธิบัตร
+    (สิทธิบัตรเลขที่ 69240 สิ้นอายุ 30/04/2565) แต่อย่างไรก็ตามบริษัทสามารถวิจัยและผลิตเพื่อขึ้นทะเบียนยานี้ไว้ก่อนได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Etravirine Tablet 100 mg, 200 mg:
+  class: blocked_until
+  avoid:
+  - '9901004167'
+  conclusion: สรุปในประเทศไทยบริษัทยายังไม่สามารถผลิตยาชื่อสามัญ Etravirine จำหน่ายได้
+  avoid_optional:
+  - '0101001714'
+  - 0201002960
+  - '0401003512'
+  - '0401000556'
+  note: no number in the conclusion; 9901004167 (patent 37259, drug substance, in force until 08/11/2562) is what blocks;
+    the note asks to watch the four pending applications, kept as optional
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Raltegravir Tablet 25 mg, 100 mg, 400 mg:
+  class: blocked_until
+  avoid:
+  - '0501005605'
+  conclusion: สรุปในประเทศไทยบริษัทยาชื่อสามัญยังไม่สามารถผลิตยาชื่อสามัญ Raltegravir Tablet 25 mg, 100 mg, 400 mg จำหน่ายได้จนกว่าจะสิ้นอายุสิทธิบัตร
+    29/11/2568
+  note: conclusion gives only the date 29/11/2568, which is 0501005605's expiry
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Sitagliptin Tablet 50 mg, 100 mg:
+  class: blocked_until
+  avoid:
+  - '0401002206'
+  conclusion: สรุปในประเทศไทยบริษัทยายังไม่สามารถผลิตยาชื่อสามัญที่ใช้ตัวยาสำคัญ Sitagliptin Dihydrogenphosphate จำหน่ายได้และจะสามารถผลิตยาชื่อสามัญ
+    Sitagliptin Tablet ที่ใช้ตัวยาสำคัญนี้จำหน่ายได้หลัง 16/06/2567
+  note: conclusion gives only the date 16/06/2567, which is 0401002206's expiry
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Empagliflozin Tablet 10 mg, 25 mg:
+  class: blocked_until
+  avoid:
+  - 0401003286
+  conclusion: สรุปในประเทศไทยบริษัทยาจะยังไม่สามารถผลิตยาที่ใช้ตัวยาสำคัญ Empagliflozin จำหน่ายได้หากคำขอรับสิทธิบัตรเลขที่
+    0401003286 ได้รับการอนุมัติสิทธิบัตรแต่จากข้อมูลบน web site ของกรมทรัพย์สินทางปัญญาไม่ลงข้อมูลที่เป็นปัจจุบันดังนั้นบริษัทยาที่สนใจจะผลิตยานี้ต้องไปเปิดแฟ้มดูสถานะของคำขอรับสิทธิบัตรที่  229
+    กรมทรัพย์สินทางปัญญา
+  note: 'conditional: blocked if the drug-substance application 0401003286 is granted'
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Octreotide Sterile powder 10 mg/vial, 20 mg/vial, 30mg/vial:
+  class: free_with_avoidance
+  avoid:
+  - '0101003007'
+  - 0401002826
+  - 0401004469
+  - 0601006338
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญที่ใช้ตัวยาสำคัญ Octreotide จำหน่ายได้โดยต้องไม่ใช้วัตถุดิบตามที่ระบุในสิทธิบัตรเลขที่
+    50439 และสิทธิบัตรเลขที่ 58296 และหากจะผลิตในรูปแบบ Depot (sterile powder) จะต้องไม่ใช่สูตรตามคำขอรับสิทธิบัตรเลขที่ 0401004469
+    และคำขอรับสิทธิบัตรเลขที่ 0601006338
+  suspect:
+    0401002826: conclusion says to avoid patent 58296 but the table gives its status as แจ้งเพิกถอน 02/05/2562
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Azilsartan Tablet 40 mg, 80 mg:
+  class: blocked_until
+  avoid:
+  - '0501000745'
+  - 0601001409
+  conclusion: สรุปในประเทศไทยบริษัทยายังไม่สามารถผลิตยาชื่อสามัญที่ใช้ตัวยาสำคัญ Azilsartan จำหน่ายได้ (มีคำขอรับสิทธิบัตรในตัวยาสำคัญ
+    2 ฉบับคือคำขอรับสิทธิบัตรเลขที่ 0501000745 จะสิ้นอายุ 22/02/2568 และคำขอรับสิทธิบัตรเลขที่ 0601001409 จะสิ้นอายุ 29/03/2569)
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Alfuzosin Sustained release Tablet 10 mg:
+  class: free_with_avoidance
+  avoid:
+  - '0001002325'
+  - 0501003838
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Alfuzosin SR Tablet จำหน่ายได้โดยหลีกเลี่ยงสูตรตำรับตามคำขอรับสิทธิบัตรเลขที่
+    0001002325 และคำขอรับสิทธิบัตรเลขที่ 0501003838
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Linezolid Tablet 600 mg, Injection 2mg/ml:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Linezolid Tablet และ Injection จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Gefitinib Tablet 250 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Gefitinib Tablet จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Sirolimus Tablet 1 mg:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยา Sirolimus tablet จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Tacrolimus Capsule 0.5 mg, 1 mg, 3 mg, 5mg, Sterile solution 5 mg/ml:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Tacrolimus Capsule, Sterile solution, SR capsule จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Budesonide + Formoterol DPI 80mcg + 4.5mcg/dose, 160mcg + 4.5mcg/dose:
+  class: free_with_avoidance
+  avoid:
+  - '0401004531'
+  - 0301000682
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Budesonide + Formoterol DPI จำหน่ายได้โดยหลีกเลี่ยงการใช้อุปกรณ์ตามสิทธิบัตรเลขที่
+    30642 และหลีกเลี่ยงสูตรตำรับตามคำขอรับสิทธิบัตรเลขที่ 0301000682
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Aripiprazole Orodispersible Tablet 10 mg, 15 mg:
+  class: free_with_avoidance
+  avoid:
+  - 0001002258
+  - 0201003738
+  - '1501006565'
+  - '0401000022'
+  - '0201003570'
+  - '1301007314'
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ Aripiprazole ODT ได้โดยต้องหลีกเลี่ยงการผลิตตามสูตรตำรับสิทธิบัตรเลขที่
+    64527 คำขอรับสิทธิบัตรเลขที่ 0201003738  คำขอรับสิทธิบัตรเลขที่ 1501006565 และหลีกเลี่ยงการใช้วัตถุดิบตามสิทธิบัตรเลขที่
+    57989 สิทธิบัตรเลขที่ 64664 และคำขอรับสิทธิบัตรเลขที่ 1301007314
+  source: drafted from the conclusion by rules, checked by hand against the PDF
+Verteporfin Sterile powder 15 mg/vial:
+  class: free
+  avoid: []
+  conclusion: สรุปในประเทศไทยบริษัทยาสามารถผลิตยาชื่อสามัญ  Verteporfin sterile powder จำหน่ายได้
+  source: drafted from the conclusion by rules, checked by hand against the PDF

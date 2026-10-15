@@ -1,18 +1,21 @@
-"""Blind evaluation: score what the pipeline discovered against the held-out answer key from the PDF.
+"""Blind evaluation: score the matcher's patent-product links against the held-out answer key from the อย. reports.
 
     python -m eval.score                        # score the current database
-    python -m eval.score --fresh                # rebuild into a fresh DB from seed/drugs.yaml first (no analyst input)
-    python -m eval.score --fresh --skip-crawl
+    python -m eval.score --fresh                # load the PDFs into a fresh DB, match (rules + LLM if set), score
+    python -m eval.score --fresh --no-llm       # rules only
+    python -m eval.score --fresh --pubchem      # also give the matcher PubChem synonyms (not in the reports)
 
-Only automated links are scored (match_method keyword/llm); analyst review decisions are ignored, so the score
-measures the pipeline, not the analyst. The PDF is ground truth: every disagreement counts as a pipeline error,
-including on items the key marks `suspect`; those are also listed under `adjudicate` with the note, for context.
+The database holds every patent listed anywhere in the two reports, as one pool, and every product, with nothing
+saying which patent was listed under which product (etl.load_pdf). The matcher has to put them back together. Each
+product is scored as of its own report date. Only automated links are scored (match_method keyword/llm); analyst
+review decisions are ignored, so the score measures the pipeline, not the analyst. The PDF is ground truth: every
+disagreement counts as a pipeline error, including on items the key marks `suspect`; those are also listed under
+`adjudicate` with the note, for context.
 """
 import argparse
 import csv
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import date, datetime
@@ -23,6 +26,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 KEY = Path(__file__).resolve().parent / "golden" / "expected.yaml"
 OUT = Path(__file__).resolve().parent
+SOURCE = "pdf"  # what this evaluation scores: matching over the patents loaded from the อย. reports
 
 COARSE = {"drug_substance": {"drug_substance"}, "solid_form": {"drug_substance", "product"},
           "process": {"process"}, "formulation": {"product"}, "device": {"product"}, "combination": {"product"},
@@ -30,6 +34,8 @@ COARSE = {"drug_substance": {"drug_substance"}, "solid_form": {"drug_substance",
 STATUS_COARSE = {"granted_active": "granted_active", "pending_unexamined": "pending", "pending_examining": "pending",
                  "likely_abandoned": "abandoned", "abandoned": "abandoned", "expired": "expired", "revoked": "revoked",
                  "not_published": "not_published"}
+METRICS = ("discovery_recall", "discovery_precision", "category_accuracy", "status_accuracy", "expiry_accuracy",
+           "verdict_accuracy", "avoid_recall", "avoid_precision")
 
 
 def _prf(pred: set, exp: set, optional: set = frozenset()) -> dict:
@@ -41,7 +47,22 @@ def _prf(pred: set, exp: set, optional: set = frozenset()) -> dict:
             "missed": sorted(exp_s - pred_s), "extra": sorted(pred_s - exp_s)}
 
 
-def score(as_of: date, db_path: str | None = None) -> dict:
+def _new_tally() -> dict:
+    return {k: 0 for k in ("disc_tp", "disc_pred", "disc_exp", "cat_ok", "cat_n", "status_ok", "status_n", "exp_ok",
+                           "exp_n", "verdict_ok", "verdict_n", "avoid_tp", "avoid_pred", "avoid_exp", "products")}
+
+
+def _ratios(t: dict) -> dict:
+    def ratio(a, b):
+        return round(t[a] / t[b], 3) if t[b] else None
+    return {"discovery_recall": ratio("disc_tp", "disc_exp"), "discovery_precision": ratio("disc_tp", "disc_pred"),
+            "category_accuracy": ratio("cat_ok", "cat_n"), "status_accuracy": ratio("status_ok", "status_n"),
+            "expiry_accuracy": ratio("exp_ok", "exp_n"), "verdict_accuracy": ratio("verdict_ok", "verdict_n"),
+            "avoid_recall": ratio("avoid_tp", "avoid_exp"), "avoid_precision": ratio("avoid_tp", "avoid_pred"), **t}
+
+
+def score(as_of: date | None = None, db_path: str | None = None) -> dict:
+    """as_of overrides every product's report date (normally left None)."""
     if db_path:
         os.environ["PATENTAPP_DB"] = db_path
     from sqlmodel import select
@@ -53,59 +74,68 @@ def score(as_of: date, db_path: str | None = None) -> dict:
 
     key = yaml.safe_load(KEY.read_text(encoding="utf-8"))
     init_db(db_path)
-    report = {"as_of": as_of.isoformat(), "run_at": datetime.now().isoformat(timespec="seconds"),
-              "db": str(db_path or "default"), "products": [], "adjudicate": []}
-    tot = {"disc_tp": 0, "disc_pred": 0, "disc_exp": 0, "cat_ok": 0, "cat_n": 0, "status_ok": 0, "status_n": 0,
-           "exp_ok": 0, "exp_n": 0, "verdict_ok": 0, "verdict_n": 0, "avoid_tp": 0, "avoid_pred": 0, "avoid_exp": 0}
+    dates = sorted({str(as_of or p["as_of"]) for p in key["products"]})
+    report = {"source": SOURCE, "key_source": key.get("source"), "as_of": dates[0] if len(dates) == 1 else
+              f"{dates[0]} – {dates[-1]} (each product as of its report date)",
+              "run_at": datetime.now().isoformat(timespec="seconds"), "db": str(db_path or "default"),
+              "products": [], "adjudicate": []}
+    tallies = {"all": _new_tally()}
     with session(db_path) as s:
+        methods = [l.match_method for l in s.exec(select(PatentLink))]
+        report["config"] = {"llm": "llm" in methods,
+                            "pubchem": any(x.pubchem_cid for x in s.exec(select(Substance)))}
         for item in key["products"]:
+            day = as_of or item["as_of"]
+            tot = [tallies["all"], tallies.setdefault(item["report"], _new_tally())]
+
+            def add(field, n):
+                for t in tot:
+                    t[field] += n
             dp = s.exec(select(DrugProduct).where(DrugProduct.name == item["product"])).first()
-            row = {"product": item["product"], "found_in_db": bool(dp)}
+            row = {"product": item["product"], "report": item["report"], "as_of": str(day), "found_in_db": bool(dp)}
             if not dp:
                 report["products"].append(row)
                 continue
+            add("products", 1)
             sub_ids = [ps.substance_id for ps in s.exec(select(ProductSubstance).where(ProductSubstance.drug_product_id == dp.id))]
             views = []
             for l in s.exec(select(PatentLink).where(PatentLink.substance_id.in_(sub_ids))):
                 if l.match_method == "manual" or l.drug_product_id not in (None, dp.id):
                     continue
                 p = s.get(Patent, l.patent_id)
-                if p.publication_date and p.publication_date > as_of:
-                    continue
-                views.append(LinkView(l, p, s.get(Substance, l.substance_id), status_as_of(p, as_of)))
-            pred = {v.patent.application_no: v for v in views if v.link.blocking_level != "not_relevant"}
+                if p.publication_date and p.publication_date > day:
+                    continue  # not public yet on the report date
+                views.append(LinkView(l, p, s.get(Substance, l.substance_id), status_as_of(p, day)))
+            # a patent linked through two substances of a combination product counts once
+            pred = {}
+            for v in views:
+                if v.link.blocking_level != "not_relevant":
+                    pred.setdefault(v.patent.application_no, v)
             exp = {e["appno"]: e for e in item["patents"] if not e.get("unpublished")}
 
             disc = _prf(set(pred), set(exp))
             row["discovery"] = disc
-            tot["disc_tp"] += disc["tp"]; tot["disc_pred"] += disc["pred"]; tot["disc_exp"] += disc["expected"]
+            add("disc_tp", disc["tp"]); add("disc_pred", disc["pred"]); add("disc_exp", disc["expected"])
 
             details = []
             for appno in sorted(set(pred) & set(exp)):
                 v, e = pred[appno], exp[appno]
                 d = {"appno": appno, "suspect": e.get("suspect")}
                 if e.get("pdf_type"):
-                    ok = e["pdf_type"] in COARSE.get(v.link.claim_category, set())
-                    d["category"] = {"ours": v.link.claim_category, "pdf": e["pdf_type"], "ok": ok}
-                    tot["cat_n"] += 1; tot["cat_ok"] += ok
+                    ok = bool(COARSE.get(v.link.claim_category, set()) & set(e["pdf_type"]))
+                    d["category"] = {"ours": v.link.claim_category, "pdf": "/".join(e["pdf_type"]), "ok": ok}
+                    add("cat_n", 1); add("cat_ok", ok)
                 ours_st = STATUS_COARSE.get(v.status, v.status)
-                ok = ours_st == e["pdf_status"]
-                d["status"] = {"ours": v.status, "pdf": e["pdf_status"], "ok": ok}
-                tot["status_n"] += 1; tot["status_ok"] += ok
+                if e.get("pdf_status"):
+                    ok = ours_st == e["pdf_status"]
+                    d["status"] = {"ours": v.status, "pdf": e["pdf_status"], "ok": ok}
+                    add("status_n", 1); add("status_ok", ok)
                 if e.get("expiry"):
                     ours_exp = v.patent.expiry_date
                     ok = bool(ours_exp) and abs((ours_exp - e["expiry"]).days) <= 1
                     d["expiry"] = {"ours": ours_exp.isoformat() if ours_exp else None, "pdf": e["expiry"].isoformat(), "ok": ok}
-                    tot["exp_n"] += 1; tot["exp_ok"] += ok
+                    add("exp_n", 1); add("exp_ok", ok)
                 bad = [k for k in ("category", "status", "expiry") if k in d and not d[k]["ok"]]
-                drift = (not d["status"]["ok"] and ours_st in ("revoked", "abandoned")
-                         and e["pdf_status"] in ("granted_active", "pending"))
-                if drift:
-                    d["status"]["drift"] = True
-                    report["adjudicate"].append({
-                        "product": item["product"], "appno": appno, "fields": ["status"],
-                        "reason": f"status today is '{v.patent.status_raw}' — the change probably happened after the "
-                                  f"report date, but public data has no date for it", "status": d["status"]})
                 if bad and e.get("suspect"):
                     report["adjudicate"].append({"product": item["product"], "appno": appno, "fields": bad,
                                                  "reason": e["suspect"], **{k: d[k] for k in bad}})
@@ -113,44 +143,40 @@ def score(as_of: date, db_path: str | None = None) -> dict:
             row["matched"] = details
             for appno in disc["extra"]:
                 v = pred[appno]
-                report["adjudicate"].append({"product": item["product"], "appno": appno, "fields": ["extra"],
-                                             "reason": "found by the pipeline but not in the PDF",
-                                             "title": v.patent.title, "category": v.link.claim_category,
-                                             "status": v.status, "evidence": v.link.evidence_snippet})
+                listed = [p["product"] for p in key["products"] if any(e["appno"] == appno for e in p["patents"])]
+                report["adjudicate"].append({
+                    "product": item["product"], "appno": appno, "fields": ["extra"],
+                    "reason": "linked by the matcher but not listed for this product"
+                              + (f" (listed for: {'; '.join(listed)})" if listed else ""),
+                    "title": v.patent.title, "category": v.link.claim_category, "status": v.status,
+                    "evidence": v.link.evidence_snippet})
 
-            res = assess(dp, list(pred.values()), as_of)
+            res = assess(dp, list(pred.values()), day)
             vk = item["verdict"]
             ok = res["verdict"] == vk["class"]
-            tot["verdict_n"] += 1; tot["verdict_ok"] += ok
+            add("verdict_n", 1); add("verdict_ok", ok)
             ours_avoid = {r["application_no"] for r in res["avoid"] + res["blocking"]}
             av = _prf(ours_avoid, set(vk.get("avoid", [])) | set(vk.get("avoid_optional", [])),
                       set(vk.get("avoid_optional", [])))
-            tot["avoid_tp"] += av["tp"]; tot["avoid_pred"] += av["pred"]; tot["avoid_exp"] += av["expected"]
+            add("avoid_tp", av["tp"]); add("avoid_pred", av["pred"]); add("avoid_exp", av["expected"])
             row["verdict"] = {"ours": res["verdict"], "pdf": vk["class"], "ok": ok,
                               "free_date": res["free_date"].isoformat() if res["free_date"] else None, "avoid": av}
             report["products"].append(row)
 
-    def ratio(a, b):
-        return round(a / b, 3) if b else None
-    report["totals"] = {
-        "discovery_recall": ratio(tot["disc_tp"], tot["disc_exp"]),
-        "discovery_precision": ratio(tot["disc_tp"], tot["disc_pred"]),
-        "category_accuracy": ratio(tot["cat_ok"], tot["cat_n"]),
-        "status_accuracy": ratio(tot["status_ok"], tot["status_n"]),
-        "expiry_accuracy": ratio(tot["exp_ok"], tot["exp_n"]),
-        "verdict_accuracy": ratio(tot["verdict_ok"], tot["verdict_n"]),
-        "avoid_recall": ratio(tot["avoid_tp"], tot["avoid_exp"]),
-        "avoid_precision": ratio(tot["avoid_tp"], tot["avoid_pred"]),
-        **{k: v for k, v in tot.items()},
-    }
+    report["totals"] = _ratios(tallies.pop("all"))
+    report["by_report"] = {k: _ratios(t) for k, t in tallies.items()}
     return report
 
 
 def write_reports(report: dict):
     runs = OUT / "runs"
     runs.mkdir(exist_ok=True)
-    prev_files = sorted(runs.glob("*.json"))
-    prev = json.loads(prev_files[-1].read_text(encoding="utf-8")) if prev_files else None
+    prev = None
+    for f in sorted(runs.glob("*.json"), reverse=True):  # latest earlier run of the same kind
+        r = json.loads(f.read_text(encoding="utf-8"))
+        if r.get("source") == report["source"] and r.get("config") == report["config"]:
+            prev = r
+            break
     if prev:
         report["regressions"] = [
             {"metric": k, "previous": prev["totals"].get(k), "now": v}
@@ -162,27 +188,31 @@ def write_reports(report: dict):
     (OUT / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
     t = report["totals"]
-    md = [f"# Blind evaluation — as of {report['as_of']} (run {report['run_at']})", "",
-          "| metric | value |", "|---|---|"]
-    for k in ("discovery_recall", "discovery_precision", "category_accuracy", "status_accuracy", "expiry_accuracy",
-              "verdict_accuracy", "avoid_recall", "avoid_precision"):
-        md.append(f"| {k} | {t[k]} |")
+    cfg = report["config"]
+    md = [f"# Blind evaluation — matching over the อย. report patents, as of {report['as_of']} (run {report['run_at']})",
+          "", f"Matcher: {'rules + LLM' if cfg['llm'] else 'rules only'}; drug data: "
+              f"{'report + PubChem synonyms' if cfg['pubchem'] else 'report only'}.",
+          "", "| metric | all | " + " | ".join(report["by_report"]) + " |",
+          "|---|---|" + "---|" * len(report["by_report"])]
+    for k in METRICS:
+        md.append(f"| {k} | {t[k]} | " + " | ".join(str(r[k]) for r in report["by_report"].values()) + " |")
+    md.append(f"| products | {t['products']} | " + " | ".join(str(r["products"]) for r in report["by_report"].values()) + " |")
     if report.get("regressions"):
         md += ["", "**Regressions vs previous run:** " + ", ".join(
             f"{r['metric']} {r['previous']} → {r['now']}" for r in report["regressions"])]
-    md += ["", "| product | found/expected | extra | verdict (ours / PDF) | avoid recall |", "|---|---|---|---|---|"]
+    md += ["", "| product | as of | found/expected | extra | verdict (ours / PDF) | avoid recall |", "|---|---|---|---|---|---|"]
     for p in report["products"]:
         if "discovery" not in p:
-            md.append(f"| {p['product']} | not in DB | | | |")
+            md.append(f"| {p['product']} | {p['as_of']} | not in DB | | | |")
             continue
         d, v = p["discovery"], p["verdict"]
-        md.append(f"| {p['product']} | {d['tp']}/{d['expected']} | {len(d['extra'])} | "
+        md.append(f"| {p['product']} | {p['as_of']} | {d['tp']}/{d['expected']} | {len(d['extra'])} | "
                   f"{'✅' if v['ok'] else '❌'} {v['ours']} / {v['pdf']} | {v['avoid']['recall']} |")
-    md += ["", "## Missed (in the PDF, not found)", ""]
+    md += ["", "## Missed (listed in the PDF, not linked)", ""]
     for p in report["products"]:
         if p.get("discovery", {}).get("missed"):
             md.append(f"- {p['product']}: {', '.join(p['discovery']['missed'])}")
-    md += ["", "## Notes on errors (extra patents, suspect key items, status drift)", ""]
+    md += ["", "## Notes on errors (extra links, suspect key items)", ""]
     for a in report["adjudicate"]:
         md.append(f"- **{a['product']}** {a['appno']} [{', '.join(a['fields'])}] — {a['reason']}"
                   + (f" — {a.get('title')}" if a.get("title") else ""))
@@ -195,7 +225,7 @@ def write_reports(report: dict):
             for appno in p.get("discovery", {}).get("missed", []):
                 w.writerow([p["product"], appno, "missed", "", "listed", False, ""])
             for appno in p.get("discovery", {}).get("extra", []):
-                w.writerow([p["product"], appno, "extra", "found", "", "", ""])
+                w.writerow([p["product"], appno, "extra", "linked", "", "", ""])
             for d in p.get("matched", []):
                 for k in ("category", "status", "expiry"):
                     if k in d:
@@ -204,39 +234,30 @@ def write_reports(report: dict):
                 w.writerow([p["product"], "", "verdict", p["verdict"]["ours"], p["verdict"]["pdf"], p["verdict"]["ok"], ""])
 
 
-def fresh_db(skip_crawl: bool) -> str:
-    """Build a brand-new DB from the seed list only (raw page caches are reused; they hold no answers)."""
+def fresh_db(use_llm: bool, pubchem: bool = False) -> str:
+    """Load the PDFs into a brand-new DB and run the matcher (no analyst input)."""
     runs = OUT / "runs"
     runs.mkdir(exist_ok=True)
     db = runs / f"fresh-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
     env = {**os.environ, "PATENTAPP_DB": str(db)}
-    # seed the fresh DB with the cached category corpus so the crawl does not need to re-list
-    cmd = [sys.executable, "-m", "etl.pipeline", "--as-of", key_as_of().isoformat()]
-    if skip_crawl:
-        cmd.append("--skip-crawl")
-        shutil.copy(ROOT / "data" / "app.db", db)  # corpus only; links/assessments are wiped below
-        import sqlite3
-        con = sqlite3.connect(db)
-        con.executescript("DELETE FROM patent_link; DELETE FROM assessment; UPDATE substance SET name_variants_th=NULL;")
-        con.commit()
-        con.close()
+    cmd = ([sys.executable, "-m", "etl.load_pdf", "--match"] + ([] if use_llm else ["--no-llm"])
+           + (["--pubchem"] if pubchem else []))
     subprocess.run(cmd, cwd=ROOT, env=env, check=True)
+    for f in runs.glob(f"{db.name}.pre-pdf-*"):
+        f.unlink()  # backup of the empty DB
     return str(db)
-
-
-def key_as_of() -> date:
-    return yaml.safe_load(KEY.read_text(encoding="utf-8"))["as_of"]
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--as-of", type=date.fromisoformat)
+    ap.add_argument("--as-of", type=date.fromisoformat, help="score every product as of this date instead")
     ap.add_argument("--db")
     ap.add_argument("--fresh", action="store_true")
-    ap.add_argument("--skip-crawl", action="store_true")
+    ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--pubchem", action="store_true", help="with --fresh: add PubChem synonyms to the drug data")
     a = ap.parse_args()
-    db = fresh_db(a.skip_crawl) if a.fresh else a.db
-    rep = score(a.as_of or key_as_of(), db)
+    db = fresh_db(not a.no_llm, a.pubchem) if a.fresh else a.db
+    rep = score(a.as_of, db)
     write_reports(rep)
     print((OUT / "report.md").read_text(encoding="utf-8"))

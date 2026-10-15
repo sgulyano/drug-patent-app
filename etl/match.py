@@ -1,17 +1,17 @@
 """Stage A (candidate links) + Stage B (claim classification) of the matching design.
 
-    python -m etl.match            # rules, plus Claude when credentials are configured
+    python -m etl.match            # rules, plus the Ollama Cloud LLM when credentials are configured
     python -m etl.match --no-llm
 """
 import argparse
-import json
 import logging
 import re
 
 from sqlmodel import select
 
 from backend.db import init_db, session
-from backend.models import Patent, PatentLink, Substance
+from backend.models import (BlockingLevel as B, ClaimCategory as C, MatchMethod, Patent, PatentLink, ReviewState,
+                            Substance)
 from etl import llm, peptide
 from etl.name_variants import variants_for
 from etl.thai import normalize_text, squash
@@ -24,8 +24,7 @@ PHARMA_IPC = ("A61K", "A61P", "A61M", "A61J", "C07", "C12", "B65D")
 
 
 def _english_terms(sub: Substance) -> list[str]:
-    syns = json.loads(sub.synonyms_en or "[]")
-    terms = [sub.inn_name] + [s for s in syns if " " not in s.strip()][:12]
+    terms = [sub.inn_name] + [s for s in sub.synonyms_en or [] if " " not in s.strip()][:12]
     return list(dict.fromkeys(t.lower() for t in terms if len(t) >= 5))
 
 
@@ -84,13 +83,13 @@ GENERIC_ACTIVE = R(r"สาร(ที่)?ออกฤทธิ์", r"ตัว
 SUBSTANCE_HEAD = R(r"^\W*\d*\.?\s*(สารประกอบ|อนุพันธ์|compound)", r"สูตรทั่วไป", r"สูตร\s*\(\s*i\s*\)")
 
 NOTES = {
-    "drug_substance": "ตัวยาสำคัญได้รับความคุ้มครอง: ผลิตเพื่อจำหน่ายไม่ได้จนกว่าสิทธิบัตรสิ้นอายุ (ใช้ผลิตเพื่อขึ้นทะเบียนตำรับได้)",
-    "solid_form": "หลีกเลี่ยงการใช้วัตถุดิบในรูปแบบ/ลักษณะของสาร (เกลือ ผลึก อสัณฐาน ขนาดอนุภาค) ตามข้อถือสิทธิ",
-    "process": "หลีกเลี่ยงการใช้วัตถุดิบที่สังเคราะห์/ผลิตด้วยกระบวนการตามข้อถือสิทธิ",
-    "formulation": "หลีกเลี่ยงสูตรตำรับ/องค์ประกอบตามข้อถือสิทธิ",
-    "device": "หลีกเลี่ยงการใช้อุปกรณ์/เครื่องมือให้ยาตามข้อถือสิทธิ",
-    "use": "หลีกเลี่ยงข้อบ่งใช้/วิธีการใช้ยาตามข้อถือสิทธิ",
-    "combination": "หลีกเลี่ยงการผลิตเป็นยาผสมกับตัวยาอื่นตามข้อถือสิทธิ",
+    C.DRUG_SUBSTANCE: "ตัวยาสำคัญได้รับความคุ้มครอง: ผลิตเพื่อจำหน่ายไม่ได้จนกว่าสิทธิบัตรสิ้นอายุ (ใช้ผลิตเพื่อขึ้นทะเบียนตำรับได้)",
+    C.SOLID_FORM: "หลีกเลี่ยงการใช้วัตถุดิบในรูปแบบ/ลักษณะของสาร (เกลือ ผลึก อสัณฐาน ขนาดอนุภาค) ตามข้อถือสิทธิ",
+    C.PROCESS: "หลีกเลี่ยงการใช้วัตถุดิบที่สังเคราะห์/ผลิตด้วยกระบวนการตามข้อถือสิทธิ",
+    C.FORMULATION: "หลีกเลี่ยงสูตรตำรับ/องค์ประกอบตามข้อถือสิทธิ",
+    C.DEVICE: "หลีกเลี่ยงการใช้อุปกรณ์/เครื่องมือให้ยาตามข้อถือสิทธิ",
+    C.USE: "หลีกเลี่ยงข้อบ่งใช้/วิธีการใช้ยาตามข้อถือสิทธิ",
+    C.COMBINATION: "หลีกเลี่ยงการผลิตเป็นยาผสมกับตัวยาอื่นตามข้อถือสิทธิ",
 }
 
 
@@ -116,49 +115,49 @@ def classify_rules(p: Patent, mentions: dict[str, list[str]], names: list[str] =
         head = _Text((p.title or "") + " " + normalize_text(p.summary or "")[:260])
     both = _Text(head.n + " " + title.n)
     if head.has(USE_HEAD) or (not p.main_claim and title.has(USE_HEAD)):
-        cat = "use"
+        cat = C.USE
     elif head.has(PROCESS_HEAD) or title.has(PROCESS_HEAD) and not p.main_claim:
-        cat = "process"
+        cat = C.PROCESS
     elif head[:140].has(DEVICE) or (title.has(DEVICE) and not head.has(FORMULATION_HEAD)):
-        cat = "device"
+        cat = C.DEVICE
     elif both.has(COMBINATION):
-        cat = "combination"
+        cat = C.COMBINATION
     elif head.has(FORMULATION_HEAD):
-        cat = "formulation"
+        cat = C.FORMULATION
     elif both.has(SOLID_FORM):
-        cat = "solid_form"
+        cat = C.SOLID_FORM
     elif head.has(SUBSTANCE_HEAD):
-        cat = "drug_substance"
+        cat = C.DRUG_SUBSTANCE
     elif both.has(FORMULATION_ANY):
-        cat = "formulation"
+        cat = C.FORMULATION
     elif _starts_with_name(head, names):
-        cat = "drug_substance"  # claim 1 claims the named compound itself
+        cat = C.DRUG_SUBSTANCE  # claim 1 claims the named compound itself
     else:
-        cat = "formulation"
+        cat = C.FORMULATION
 
     strong = "title" in mentions or "claim1" in mentions
     confidence = 0.6 if strong else 0.3
-    if cat in ("use", "process", "device") and strong:
+    if cat in (C.USE, C.PROCESS, C.DEVICE) and strong:
         confidence = 0.7
-    blocking = "blocking" if cat == "drug_substance" else "avoidable"
+    blocking = B.BLOCKING if cat == C.DRUG_SUBSTANCE else B.AVOIDABLE
     if not strong:
-        if "claims" in mentions and cat != "drug_substance" and head.has(GENERIC_ACTIVE):
+        if "claims" in mentions and cat != C.DRUG_SUBSTANCE and head.has(GENERIC_ACTIVE):
             # claim 1 covers a class of actives ("a physiologically active peptide …") and a dependent claim
             # narrows it to this substance: the substance is a claimed species.
-            blocking, confidence = "avoidable", 0.45
+            blocking, confidence = B.AVOIDABLE, 0.45
         else:
             # named only in passing (summary, or as a co-therapy partner of a different compound): not the
             # claimed invention for a single-ingredient generic. Kept as a candidate so an analyst can upgrade it.
-            blocking, confidence = "not_relevant", 0.3
+            blocking, confidence = B.NOT_RELEVANT, 0.3
     note = NOTES[cat]
-    if cat in ("solid_form", "formulation"):
+    if cat in (C.SOLID_FORM, C.FORMULATION):
         forms = sorted({m.group(0) for m in SOLID_FORM.finditer(head.n)})
         if forms:
             note += f" (เช่น {', '.join(forms[:4])})"
     flag = None
-    if cat == "use" and re.search(r"วิธีการรักษา|method (of|for) treat", head.n, re.I):
+    if cat == C.USE and re.search(r"วิธีการรักษา|method (of|for) treat", head.n, re.I):
         flag = "ข้อถือสิทธิวิธีการรักษาโรค — ไม่สามารถรับความคุ้มครองตามมาตรา 9 พ.ร.บ.สิทธิบัตร"
-    elif cat == "use":
+    elif cat == C.USE:
         flag = "ข้อถือสิทธิการใช้ (use claim) — ตรวจสอบความสามารถรับความคุ้มครองตามมาตรา 9"
     return {"claim_category": cat, "blocking_level": blocking, "confidence": confidence,
             "design_around_note": note, "thai_patentability_flag": flag,
@@ -174,7 +173,7 @@ def _starts_with_name(head: "_Text", names) -> bool:
 def classify_llm(sub: Substance, p: Patent, thai_terms: list[str]) -> dict | None:
     data = llm.classify_claim(
         {"inn": sub.inn_name, "salt_form": sub.salt_form, "thai_spellings": thai_terms[:6],
-         "synonyms": json.loads(sub.synonyms_en or "[]")[:8]},
+         "synonyms": (sub.synonyms_en or [])[:8]},
         {"title": p.title, "main_claim": (p.main_claim or "")[:4000], "summary": (p.summary or "")[:3000],
          "ipc": p.ipc, "applicant": p.applicant},
     )
@@ -182,7 +181,7 @@ def classify_llm(sub: Substance, p: Patent, thai_terms: list[str]) -> dict | Non
         return None
     cat = data["claim_category"]
     if cat == "unrelated" or not data["is_about_substance"]:
-        cat, blocking = None, "not_relevant"
+        cat, blocking = None, B.NOT_RELEVANT
     else:
         blocking = data["blocking_level"]
     return {"claim_category": cat, "blocking_level": blocking, "confidence": float(data["confidence"]),
@@ -207,19 +206,19 @@ def run(use_llm: bool = True, substance: str | None = None):
                 if not mentions:
                     continue
                 strong = "title" in mentions or "claim1" in mentions
-                if not strong and not (p.ipc or "").upper().startswith(PHARMA_IPC):
-                    continue
+                if not strong and p.ipc and not p.ipc.upper().startswith(PHARMA_IPC):
+                    continue  # a passing mention in a known non-pharma patent (no IPC, e.g. from a PDF: keep)
                 link = s.exec(select(PatentLink).where(PatentLink.patent_id == p.id,
                                                        PatentLink.substance_id == sub.id)).first()
-                if link and link.review_state != "candidate":
+                if link and link.review_state != ReviewState.CANDIDATE:
                     continue  # never overwrite an analyst's decision
                 result = None
                 if use_llm and llm.enabled():
                     result = classify_llm(sub, p, thai_terms)
-                    method = "llm"
+                    method = MatchMethod.LLM
                 if result is None:
                     result = classify_rules(p, mentions, thai_terms + en_terms)
-                    method = "keyword"
+                    method = MatchMethod.KEYWORD
                 if link is None:
                     link = PatentLink(patent_id=p.id, substance_id=sub.id)
                     n_new += 1
@@ -227,7 +226,7 @@ def run(use_llm: bool = True, substance: str | None = None):
                     n_upd += 1
                 terms = sorted({t for ts in mentions.values() for t in ts})
                 link.match_method = method
-                link.matched_terms = json.dumps({"terms": terms, "sections": sorted(mentions)}, ensure_ascii=False)
+                link.matched_terms = {"terms": terms, "sections": sorted(mentions)}
                 link.evidence_snippet = snippet(p, terms[0]) if terms else None
                 for k, v in result.items():
                     setattr(link, k, v)

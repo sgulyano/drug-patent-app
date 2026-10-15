@@ -1,4 +1,4 @@
-"""Optional Claude calls (structured JSON output). Everything here degrades gracefully to None when no
+"""Optional LLM calls via Ollama Cloud (JSON output). Everything here degrades gracefully to None when no
 credentials are configured, so the rule-based pipeline always works on its own.
 
 Prompts are generic: they describe the task and the categories only, never examples from the target drugs.
@@ -8,10 +8,27 @@ import logging
 import os
 from pathlib import Path
 
+import httpx
+
 log = logging.getLogger(__name__)
 
-MODEL = os.environ.get("PATENTAPP_LLM_MODEL", "claude-opus-5-5")
-EFFORT = os.environ.get("PATENTAPP_LLM_EFFORT", "medium")
+
+def _load_dotenv(path: Path = Path(__file__).resolve().parent.parent / ".env") -> None:
+    """Read KEY=VALUE lines from the repo's .env; real environment variables win."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+
+
+_load_dotenv()
+
+HOST = os.environ.get("OLLAMA_HOST", "https://ollama.com").rstrip("/")
+MODEL = os.environ.get("PATENTAPP_LLM_MODEL", "gemma4:31b")
+TIMEOUT = float(os.environ.get("PATENTAPP_LLM_TIMEOUT", "180"))
 _client = None
 _disabled = False
 
@@ -19,56 +36,70 @@ _disabled = False
 def enabled() -> bool:
     if _disabled or os.environ.get("PATENTAPP_LLM", "1") == "0":
         return False
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-                or (Path.home() / ".config" / "anthropic").exists())
+    return bool(os.environ.get("OLLAMA_API_KEY"))
 
 
-def _get_client():
+def _get_client() -> httpx.Client:
     global _client
     if _client is None:
-        import anthropic
-        _client = anthropic.Anthropic()
+        _client = httpx.Client(base_url=HOST, timeout=TIMEOUT,
+                               headers={"Authorization": f"Bearer {os.environ['OLLAMA_API_KEY']}"})
     return _client
 
 
+def _conforms(obj, schema: dict) -> bool:
+    """Ollama does not enforce the schema, so check what callers rely on: required keys, types, enums."""
+    types = {"object": dict, "array": list, "string": str, "boolean": bool, "number": (int, float)}
+    t = schema.get("type")
+    if t in types and (not isinstance(obj, types[t]) or (t == "number" and isinstance(obj, bool))):
+        return False
+    if "enum" in schema and obj not in schema["enum"]:
+        return False
+    if t == "object":
+        props = schema.get("properties", {})
+        return all(k in obj for k in schema.get("required", [])) and \
+            all(_conforms(obj[k], s) for k, s in props.items() if k in obj)
+    if t == "array" and "items" in schema:
+        return all(_conforms(x, schema["items"]) for x in obj)
+    return True
+
+
 def ask_json(system: str, user: str, schema: dict, max_tokens: int = 4000) -> dict | None:
-    """One structured-output call. Returns the parsed JSON object, or None on any failure/refusal."""
+    """One JSON-output call. Returns the parsed object if it matches the schema, or None on any failure."""
     global _disabled
     if not enabled():
         return None
-    import anthropic
+    system = f"{system}\n\nRespond with only a JSON object matching this JSON Schema:\n{json.dumps(schema)}"
     try:
-        resp = _get_client().beta.messages.create(
-            model=MODEL,
-            max_tokens=max_tokens,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            output_config={"effort": EFFORT, "format": {"type": "json_schema", "schema": schema}},
-            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": user}],
-        )
-    except anthropic.AuthenticationError:
-        log.warning("Claude: no valid credentials; LLM steps disabled for this run")
+        r = _get_client().post("/api/chat", json={
+            "model": MODEL,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0, "num_predict": max_tokens},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        })
+    except httpx.HTTPError as e:
+        log.warning("Ollama: network error (%s)", e)
+        return None
+    if r.status_code in (401, 403):
+        log.warning("Ollama: no valid credentials; LLM steps disabled for this run")
         _disabled = True
         return None
-    except anthropic.RateLimitError as e:
-        log.warning("Claude rate limited: %s", e.message)
+    if r.status_code != 200:
+        log.warning("Ollama API error %s: %s", r.status_code, r.text[:200])
         return None
-    except anthropic.APIStatusError as e:
-        log.warning("Claude API error %s: %s", e.status_code, e.message)
-        return None
-    except anthropic.APIConnectionError:
-        log.warning("Claude: network error")
-        return None
-    if resp.stop_reason == "refusal":
-        log.warning("Claude declined (%s)", getattr(resp.stop_details, "category", None))
-        return None
-    text = next((b.text for b in resp.content if b.type == "text"), None)
+    # Models may wrap the object in a code fence or keep talking after it: take the first JSON object.
+    text = r.json().get("message", {}).get("content", "")
+    start = text.find("{")
     try:
-        return json.loads(text) if text else None
+        data = json.JSONDecoder().raw_decode(text, start)[0] if start >= 0 else None
     except json.JSONDecodeError:
-        log.warning("Claude returned invalid JSON")
+        log.warning("Ollama returned invalid JSON")
         return None
+    if data is None or not _conforms(data, schema):
+        log.warning("Ollama output does not match the schema")
+        return None
+    return data
 
 
 # ------------------------------------------------------------------ Thai transliterations
@@ -90,7 +121,7 @@ TRANSLIT_SCHEMA = {
 
 def thai_spellings(inn: str, n: int = 12) -> list[str]:
     out = ask_json(TRANSLIT_SYSTEM, f"English name: {inn}\nReturn up to {n} Thai spellings.", TRANSLIT_SCHEMA, 2000)
-    return [s.strip() for s in (out or {}).get("spellings", []) if s and s.strip()][:n]
+    return list(dict.fromkeys(s.strip() for s in (out or {}).get("spellings", []) if s and s.strip()))[:n]
 
 
 # ------------------------------------------------------------------ claim classification

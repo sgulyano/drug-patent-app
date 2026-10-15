@@ -3,11 +3,10 @@
 Sources, all automatic:
   * rule-generated spellings (etl.thai_translit), matched by phonetic skeleton against the corpus;
   * "<Thai> (<english>)" / "<english> (<Thai>)" pairs harvested from patent text;
-  * optional Claude suggestions (etl.llm), also validated against the corpus.
+  * optional LLM suggestions (etl.llm), also validated against the corpus.
 
     python -m etl.name_variants
 """
-import json
 import logging
 import re
 from collections import Counter
@@ -111,7 +110,7 @@ def distinct_synonyms(sub: Substance, limit: int = 4) -> list[str]:
     inn = sub.inn_name.lower()
     stem = inn[: max(4, len(inn) - 2)]
     out = []
-    for s in json.loads(sub.synonyms_en or "[]"):
+    for s in sub.synonyms_en or []:
         name = re.sub(r"^[a-z]-", "", s.strip().lower())
         if not re.fullmatch(r"[a-z][a-z \-]{5,}", name):
             continue
@@ -125,7 +124,7 @@ def distinct_synonyms(sub: Substance, limit: int = 4) -> list[str]:
 
 
 def discover(sub: Substance, corpus: Corpus) -> dict:
-    english = [sub.inn_name] + json.loads(sub.synonyms_en or "[]")[:5]
+    english = [sub.inn_name] + (sub.synonyms_en or [])[:5]
     generated = [g for g, _ in generate(sub.inn_name, GENERATED_N)]
     synonym_generated = [g for syn in distinct_synonyms(sub) for g, _ in generate(syn, 25)]
     llm_spellings = llm.thai_spellings(sub.inn_name) if llm.enabled() else []
@@ -210,7 +209,7 @@ def run():
         log.info("corpus: %d documents", len(corpus.texts))
         for sub in s.exec(select(Substance)):
             res = discover(sub, corpus)
-            sub.name_variants_th = json.dumps(res, ensure_ascii=False)
+            sub.name_variants_th = res
             s.add(sub)
             log.info("%s: observed %s | probes %s", sub.inn_name,
                      [o["spelling"] for o in res["observed"][:6]], res["probes"][:3])
@@ -218,7 +217,7 @@ def run():
 
 
 def variants_for(sub: Substance, include_probes: bool = True) -> list[str]:
-    data = json.loads(sub.name_variants_th or "{}") if sub.name_variants_th else {}
+    data = sub.name_variants_th or {}
     out = [o["spelling"] for o in data.get("observed", [])]
     if include_probes:
         out += data.get("probes", [])
